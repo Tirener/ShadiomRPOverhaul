@@ -83,6 +83,51 @@ Extends the existing packets rather than adding new ones, same pattern as claims
   `canManageDiplomacy` (boolean). All three list/boolean fields are empty/false when the viewer
   has no faction, same gating as the existing claim-related fields.
 
+## Diplomacy report (HTML)
+
+A new `DiplomacyReportWriter` (package `faction`) writes a static HTML file to
+`<world save folder>/ShadiomRP/diplomacy.html` via `server.getWorldPath(LevelResource.ROOT)` -
+openable in any browser, outside the game. One table, one row per faction (alphabetical by
+name), listing its current allies and current wars ("None" if neither) - settled relations only,
+not pending alliance proposals. Faction names are HTML-escaped before being written, since
+they're player-chosen text going into a file a browser will parse.
+
+Regenerated (not just on-demand) after every action that actually changes what it would show:
+faction create, faction disband, declare war, make peace, accept alliance, break alliance - each
+of those calls `DiplomacyReportWriter.write(server)` at the end of its success path in
+`FactionEventHandler` (not on failed/no-op attempts). Also regenerated once on server start (a
+`ServerStartedEvent` subscriber on `DiplomacyReportWriter` itself, keeping this file-writing
+concern self-contained rather than adding an event subscription to `FactionEventHandler`), so
+the file exists and is current even before anything happens in a given session. A write failure
+(disk full, permissions) is logged and swallowed - it must never crash or block the action that
+triggered it.
+
+Needs one small addition to `FactionsData`: an `all()` accessor returning every known `Faction`
+(nothing currently enumerates them - every existing method looks up one faction at a time).
+
+## Public API
+
+A new `ShadiomFactionAPI` (package `faction`, same public-facade role as `ShadiomNameAPI`/
+`ShadiomTitleAPI` in their packages - delegates to the package-private storage classes, which
+stay package-private themselves) exposing **read-only** queries:
+
+- Membership: `hasFaction(ServerPlayer)`, `factionOf(ServerPlayer)` (name or null),
+  `factionIdOf(ServerPlayer)`, `roleOf(ServerPlayer)` (`"LEADER"`/`"OFFICER"`/`"MEMBER"`/null),
+  `leaderOf(MinecraftServer, factionId)` (UUID or null), `memberIdsOf(MinecraftServer,
+  factionId)` (`List<UUID>` - raw UUIDs rather than names, since offline members' names aren't
+  always resolvable, the same gap already noted in the membership spec; callers that need names
+  resolve them however suits their use case).
+- Directory: `allFactionIds(MinecraftServer)`, `factionName(MinecraftServer, factionId)`.
+- Claims: `claimOwner(MinecraftServer, ResourceKey<Level>, ChunkPos)` (factionId or null),
+  `isCapital(MinecraftServer, ResourceKey<Level>, ChunkPos)`.
+- Diplomacy: `relationBetween(MinecraftServer, factionIdA, factionIdB)` (`"NEUTRAL"`/`"ALLY"`/
+  `"WAR"`), `areAllied(...)`, `areAtWar(...)`.
+
+No mutation methods (create/kick/declare war/etc.) in v1 - those already exist as the in-game GUI
+flow with permission checks tied to the acting player; a programmatic mutation surface raises a
+separate question (who's the "actor" for permission purposes when called from arbitrary code?)
+that nothing has asked for yet. Straightforward to add later against a concrete integration need.
+
 ## Error handling
 
 Identical stance to every other action in this mod: server re-validates everything regardless of
@@ -96,7 +141,9 @@ in-game smoke test: two factions, declare war (both sides see WAR), make peace (
 NEUTRAL), propose alliance (target sees the incoming proposal), accept (both sides see ALLY),
 break alliance unilaterally (back to NEUTRAL), declare war while allied (overrides straight to
 WAR), disband a faction with active relations and confirm the other faction's list no longer
-shows it, and a server restart to confirm relations persist.
+shows it, and a server restart to confirm relations persist. Also confirm
+`<world save folder>/ShadiomRP/diplomacy.html` exists after server start and updates (open it in
+a browser) after each of the above relation changes.
 
 ## Out of scope
 
@@ -106,3 +153,6 @@ shows it, and a server restart to confirm relations persist.
   states).
 - A public feed/announcement when relations change (e.g. server-wide "X declared war on Y" chat
   message) - not asked for, easy to add later if wanted.
+- Mutation methods on `ShadiomFactionAPI` (see Public API above).
+- Any interactivity in the HTML report (it's a static snapshot regenerated on change, not a live
+  page) or serving it over HTTP - it's a local file, opened by hand.
