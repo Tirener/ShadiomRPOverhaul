@@ -7,6 +7,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.saveddata.SavedData;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -20,13 +21,39 @@ final class ClaimsData extends SavedData {
 
     private final Map<String, ClaimEntry> claims = new HashMap<>();
     private final Map<String, Set<String>> claimsByFaction = new HashMap<>();
+    private final Map<String, AnchorLocation> factionCenterLocations = new HashMap<>();
 
     record ClaimEntry(String factionId, String territoryId, boolean factionCenter) {}
 
+    /** The exact block a territory's Faction Center sits at - chunk-level data isn't precise
+     *  enough to remove the actual block, which disbanding needs to do. {@code blockPos} is a
+     *  packed {@code BlockPos.asLong()}. */
+    record AnchorLocation(String dimension, long blockPos) {}
+
     ClaimEntry get(String chunkKey) { return claims.get(chunkKey); }
+
+    /** Every claim in the world, abandoned included - used to build the multi-faction territory
+     *  map, unlike {@link #claimsOf} which is scoped to one faction. */
+    Map<String, ClaimEntry> all() {
+        return Collections.unmodifiableMap(claims);
+    }
 
     Set<String> claimsOf(String factionId) {
         return claimsByFaction.getOrDefault(factionId, Set.of());
+    }
+
+    void recordFactionCenter(String territoryId, String dimension, long blockPos) {
+        factionCenterLocations.put(territoryId, new AnchorLocation(dimension, blockPos));
+        setDirty();
+    }
+
+    AnchorLocation factionCenterLocation(String territoryId) {
+        return factionCenterLocations.get(territoryId);
+    }
+
+    void removeFactionCenterLocation(String territoryId) {
+        factionCenterLocations.remove(territoryId);
+        setDirty();
     }
 
     void claim(String chunkKey, String factionId, String territoryId, boolean factionCenter) {
@@ -114,6 +141,15 @@ final class ClaimsData extends SavedData {
             claimsTag.put(entry.getKey(), value);
         }
         nbt.put("claims", claimsTag);
+
+        CompoundTag anchorsTag = new CompoundTag();
+        for (Map.Entry<String, AnchorLocation> entry : factionCenterLocations.entrySet()) {
+            CompoundTag value = new CompoundTag();
+            value.putString("dimension", entry.getValue().dimension());
+            value.putLong("pos", entry.getValue().blockPos());
+            anchorsTag.put(entry.getKey(), value);
+        }
+        nbt.put("factionCenterLocations", anchorsTag);
         return nbt;
     }
 
@@ -132,6 +168,12 @@ final class ClaimsData extends SavedData {
             String territoryId = value.contains("territoryId") ? value.getString("territoryId") : key;
             data.claims.put(key, new ClaimEntry(factionId, territoryId, factionCenter));
             if (factionId != null) data.claimsByFaction.computeIfAbsent(factionId, k -> new HashSet<>()).add(key);
+        }
+
+        CompoundTag anchorsTag = nbt.getCompound("factionCenterLocations");
+        for (String territoryId : anchorsTag.getAllKeys()) {
+            CompoundTag value = anchorsTag.getCompound(territoryId);
+            data.factionCenterLocations.put(territoryId, new AnchorLocation(value.getString("dimension"), value.getLong("pos")));
         }
         return data;
     }

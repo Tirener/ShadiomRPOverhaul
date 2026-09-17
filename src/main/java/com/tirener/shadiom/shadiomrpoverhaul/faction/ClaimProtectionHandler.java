@@ -80,7 +80,7 @@ public final class ClaimProtectionHandler {
                 if (existing != null) { event.setCanceled(true); return; } // claimed or abandoned land
                 if (FactionEventHandler.hasPendingCapital(sp.getUUID())) { event.setCanceled(true); return; }
                 if (TerritoryRules.anyTerritoryAdjacent(claims, dimension, chunk)) { event.setCanceled(true); return; }
-                FactionEventHandler.recordPendingCapital(sp, dimension, chunk);
+                FactionEventHandler.recordPendingCapital(sp, dimension, chunk, event.getPos());
                 return;
             }
 
@@ -94,6 +94,8 @@ public final class ClaimProtectionHandler {
                 String territoryId = java.util.UUID.randomUUID().toString();
                 faction.addTerritory(new Faction.Territory(territoryId, null));
                 claims.claim(key, faction.id(), territoryId, true);
+                claims.recordFactionCenter(territoryId, dimension.location().toString(), event.getPos().asLong());
+                FactionEventHandler.broadcastTerritoryMap(sp.getServer());
                 return;
             }
 
@@ -103,6 +105,8 @@ public final class ClaimProtectionHandler {
                 String territoryId = java.util.UUID.randomUUID().toString();
                 faction.addTerritory(new Faction.Territory(territoryId, null));
                 claims.repossess(blob, faction.id(), territoryId, key);
+                claims.recordFactionCenter(territoryId, dimension.location().toString(), event.getPos().asLong());
+                FactionEventHandler.broadcastTerritoryMap(sp.getServer());
                 return;
             }
 

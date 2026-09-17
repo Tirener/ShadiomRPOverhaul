@@ -4,6 +4,7 @@ import com.tirener.shadiom.shadiomrpoverhaul.network.ModNetwork;
 import com.tirener.shadiom.shadiomrpoverhaul.network.faction.FactionActionC2SPacket;
 import com.tirener.shadiom.shadiomrpoverhaul.network.faction.FactionActionC2SPacket.Action;
 import com.tirener.shadiom.shadiomrpoverhaul.network.faction.OpenFactionScreenS2CPacket;
+import com.tirener.shadiom.shadiomrpoverhaul.network.faction.RequestTerritoryMapC2SPacket;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -121,9 +122,29 @@ public class FactionScreen extends Screen {
             y += ROW_GAP;
         }
 
-        String areaLabel = ClaimBorderRenderer.isEnabled() ? "Hide Faction Area" : "Show Faction Area";
+        y += 12;
+        shown = 0;
+        for (int i = 0; i < state.territoryIds().size() && shown < MAX_ROWS; i++, shown++) {
+            String territoryId = state.territoryIds().get(i);
+            String territoryName = state.territoryNames().get(i);
+            int chunkCount = state.territoryChunkCounts().get(i);
+            boolean isCapital = territoryId.equals(state.capitalTerritoryId());
+
+            String label = (territoryName.isEmpty() ? "Unnamed Territory" : territoryName)
+                    + " - " + chunkCount + "/100" + (isCapital ? " (Capital)" : "");
+            addRow(Component.literal(label), List.of());
+        }
+
+        y += 12;
+        String areaLabel = ClaimBorderRenderer.isEnabled() ? "Hide Territory Map" : "Show Territory Map";
         addRenderableWidget(Button.builder(Component.literal(areaLabel),
-                b -> ClaimBorderRenderer.toggle(state.ownClaimedChunkKeys()))
+                b -> {
+                    if (ClaimBorderRenderer.isEnabled()) {
+                        ClaimBorderRenderer.hide();
+                    } else {
+                        ModNetwork.CHANNEL.sendToServer(new RequestTerritoryMapC2SPacket());
+                    }
+                })
                 .pos(left, y).size(PANEL_W, ROW_H).build());
         y += ROW_GAP;
 

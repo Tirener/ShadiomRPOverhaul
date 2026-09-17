@@ -56,7 +56,9 @@ public final class TerritoryHudHandler {
         if (faction == null) return "Wilderness"; // orphaned entry, shouldn't normally happen
 
         Faction.Territory territory = faction.territory(entry.territoryId());
-        if (territory != null && territory.name() != null) return territory.name();
-        return faction.name();
+        String name = territory == null ? null : territory.name();
+        boolean isCapital = entry.territoryId().equals(faction.capitalTerritoryId());
+        String role = (isCapital ? "Capital of " : "Territory of ") + faction.name();
+        return name == null ? role : name + ", " + role;
     }
 }

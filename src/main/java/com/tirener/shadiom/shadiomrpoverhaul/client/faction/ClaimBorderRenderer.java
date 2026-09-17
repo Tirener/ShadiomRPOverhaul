@@ -16,49 +16,71 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.joml.Matrix4f;
 
-import java.util.ArrayList;
-import java.util.HashSet;
+import java.awt.Color;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 
 /**
- * Draws a translucent wall on the outer boundary of the viewer's faction territory (edges
- * between a claimed chunk and a non-claimed one only - not every internal chunk edge, so it
- * reads as a boundary rather than a grid). Toggled from {@code FactionScreen}; the chunk list is
- * a snapshot from whenever it was toggled on, not live - see the design spec.
+ * Draws a translucent wall on the outer boundary of every known territory (edges between two
+ * chunks of a different territoryId only - not every internal chunk edge, so each territory reads
+ * as its own boundary rather than one big grid). Every faction gets its own color, deterministic
+ * from a hash of its id so no extra data has to travel over the wire for it; an abandoned
+ * territory (no faction) is grey. Toggled from {@code FactionScreen}, which requests a fresh
+ * snapshot from the server rather than using only client-known data, since this shows every
+ * faction's land, not just the viewer's own; kept live afterward by
+ * {@link #applyUpdate}, driven by a server-side broadcast sent whenever any claim changes
+ * anywhere (see {@code FactionEventHandler#broadcastTerritoryMap}).
  * <p>
- * ponytail: full world height per wall, fine for a handful of claimed chunks; if a faction's
- * territory gets huge this gets expensive to draw - cap the Y range or switch to only rendering
- * near the camera if that ever matters.
+ * ponytail: full world height per wall, fine for a handful of claimed chunks; if the world's
+ * total claimed area gets huge this gets expensive to draw - cap the Y range or switch to only
+ * rendering near the camera if that ever matters.
  */
 @Mod.EventBusSubscriber(modid = Shadiomrpoverhaul.MODID, value = Dist.CLIENT)
 public final class ClaimBorderRenderer {
 
     private ClaimBorderRenderer() {}
 
-    private static final float R = 0.2f, G = 0.6f, B = 1f, A = 0.35f;
+    private static final float A = 0.35f;
+    private static final float[] GREY = {0.5f, 0.5f, 0.5f};
     private static final double MIN_Y = -64, MAX_Y = 320;
 
+    /** Pushes each wall slightly outward off the exact chunk-boundary plane so it doesn't
+     *  z-fight with block faces that happen to sit on that same plane. */
+    private static final double EPSILON = 0.02;
+
+    private record TerritoryChunk(String factionId, String territoryId) {}
+
     private static boolean enabled = false;
-    private static List<ChunkPos> chunks = List.of();
+    private static Map<ChunkPos, TerritoryChunk> chunks = Map.of();
 
     public static boolean isEnabled() { return enabled; }
 
-    public static void toggle(List<String> ownClaimedChunkKeys) {
-        if (enabled) {
-            enabled = false;
-            return;
-        }
-        chunks = parse(ownClaimedChunkKeys);
+    /** Turns the map on (or refreshes it) with a full snapshot - the direct response to the
+     *  player explicitly asking to see it. */
+    public static void show(List<String> chunkKeys, List<String> factionIds, List<String> territoryIds) {
+        chunks = parse(chunkKeys, factionIds, territoryIds);
         enabled = true;
     }
 
-    private static List<ChunkPos> parse(List<String> keys) {
-        List<ChunkPos> result = new ArrayList<>();
-        for (String key : keys) {
-            String[] parts = key.split(",");
+    /** Applies a broadcasted snapshot, but only while already showing - a change made by some
+     *  other faction shouldn't turn the map on for a player who never asked to see it. */
+    public static void applyUpdate(List<String> chunkKeys, List<String> factionIds, List<String> territoryIds) {
+        if (!enabled) return;
+        chunks = parse(chunkKeys, factionIds, territoryIds);
+    }
+
+    public static void hide() {
+        enabled = false;
+    }
+
+    private static Map<ChunkPos, TerritoryChunk> parse(List<String> chunkKeys, List<String> factionIds, List<String> territoryIds) {
+        Map<ChunkPos, TerritoryChunk> result = new HashMap<>();
+        for (int i = 0; i < chunkKeys.size(); i++) {
+            String[] parts = chunkKeys.get(i).split(",");
             if (parts.length != 3) continue;
-            result.add(new ChunkPos(Integer.parseInt(parts[1]), Integer.parseInt(parts[2])));
+            ChunkPos pos = new ChunkPos(Integer.parseInt(parts[1]), Integer.parseInt(parts[2]));
+            result.put(pos, new TerritoryChunk(factionIds.get(i), territoryIds.get(i)));
         }
         return result;
     }
@@ -68,7 +90,6 @@ public final class ClaimBorderRenderer {
         if (!enabled || chunks.isEmpty()) return;
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) return;
 
-        Set<ChunkPos> claimed = new HashSet<>(chunks);
         Vec3 camera = event.getCamera().getPosition();
 
         PoseStack poseStack = event.getPoseStack();
@@ -86,21 +107,25 @@ public final class ClaimBorderRenderer {
         BufferBuilder buffer = tesselator.getBuilder();
         buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
 
-        for (ChunkPos chunk : claimed) {
+        for (Map.Entry<ChunkPos, TerritoryChunk> entry : chunks.entrySet()) {
+            ChunkPos chunk = entry.getKey();
+            String territoryId = entry.getValue().territoryId();
+            float[] color = colorFor(entry.getValue().factionId());
+
             int x0 = chunk.getMinBlockX(), x1 = chunk.getMaxBlockX() + 1;
             int z0 = chunk.getMinBlockZ(), z1 = chunk.getMaxBlockZ() + 1;
 
-            if (!claimed.contains(new ChunkPos(chunk.x - 1, chunk.z))) {
-                wall(buffer, pose, x0, x0, z0, z1, MIN_Y, MAX_Y);
+            if (differentTerritory(chunk.x - 1, chunk.z, territoryId)) {
+                wall(buffer, pose, x0 - EPSILON, x0 - EPSILON, z0 - EPSILON, z1 + EPSILON, MIN_Y, MAX_Y, color);
             }
-            if (!claimed.contains(new ChunkPos(chunk.x + 1, chunk.z))) {
-                wall(buffer, pose, x1, x1, z0, z1, MIN_Y, MAX_Y);
+            if (differentTerritory(chunk.x + 1, chunk.z, territoryId)) {
+                wall(buffer, pose, x1 + EPSILON, x1 + EPSILON, z0 - EPSILON, z1 + EPSILON, MIN_Y, MAX_Y, color);
             }
-            if (!claimed.contains(new ChunkPos(chunk.x, chunk.z - 1))) {
-                wall(buffer, pose, x0, x1, z0, z0, MIN_Y, MAX_Y);
+            if (differentTerritory(chunk.x, chunk.z - 1, territoryId)) {
+                wall(buffer, pose, x0 - EPSILON, x1 + EPSILON, z0 - EPSILON, z0 - EPSILON, MIN_Y, MAX_Y, color);
             }
-            if (!claimed.contains(new ChunkPos(chunk.x, chunk.z + 1))) {
-                wall(buffer, pose, x0, x1, z1, z1, MIN_Y, MAX_Y);
+            if (differentTerritory(chunk.x, chunk.z + 1, territoryId)) {
+                wall(buffer, pose, x0 - EPSILON, x1 + EPSILON, z1 + EPSILON, z1 + EPSILON, MIN_Y, MAX_Y, color);
             }
         }
 
@@ -112,11 +137,31 @@ public final class ClaimBorderRenderer {
         poseStack.popPose();
     }
 
+    private static boolean differentTerritory(int chunkX, int chunkZ, String territoryId) {
+        TerritoryChunk neighbor = chunks.get(new ChunkPos(chunkX, chunkZ));
+        return neighbor == null || !neighbor.territoryId().equals(territoryId);
+    }
+
+    /** Grey for an abandoned (ownerless) territory; otherwise a color hashed from the faction id,
+     *  so every faction reads as a distinct, stable color without sending color data over the
+     *  wire at all. */
+    private static float[] colorFor(String factionId) {
+        if (factionId == null || factionId.isEmpty()) return GREY;
+
+        float hue = (Math.floorMod(factionId.hashCode(), 360)) / 360f;
+        int rgb = Color.HSBtoRGB(hue, 0.65f, 1f);
+        return new float[] {
+                ((rgb >> 16) & 0xFF) / 255f,
+                ((rgb >> 8) & 0xFF) / 255f,
+                (rgb & 0xFF) / 255f
+        };
+    }
+
     private static void wall(BufferBuilder buffer, Matrix4f pose,
-                              double x0, double x1, double z0, double z1, double y0, double y1) {
-        buffer.vertex(pose, (float) x0, (float) y0, (float) z0).color(R, G, B, A).endVertex();
-        buffer.vertex(pose, (float) x1, (float) y0, (float) z1).color(R, G, B, A).endVertex();
-        buffer.vertex(pose, (float) x1, (float) y1, (float) z1).color(R, G, B, A).endVertex();
-        buffer.vertex(pose, (float) x0, (float) y1, (float) z0).color(R, G, B, A).endVertex();
+                              double x0, double x1, double z0, double z1, double y0, double y1, float[] color) {
+        buffer.vertex(pose, (float) x0, (float) y0, (float) z0).color(color[0], color[1], color[2], A).endVertex();
+        buffer.vertex(pose, (float) x1, (float) y0, (float) z1).color(color[0], color[1], color[2], A).endVertex();
+        buffer.vertex(pose, (float) x1, (float) y1, (float) z1).color(color[0], color[1], color[2], A).endVertex();
+        buffer.vertex(pose, (float) x0, (float) y1, (float) z0).color(color[0], color[1], color[2], A).endVertex();
     }
 }

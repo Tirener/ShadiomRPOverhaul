@@ -1,10 +1,11 @@
 package com.tirener.shadiom.shadiomrpoverhaul.network;
 
 import com.tirener.shadiom.shadiomrpoverhaul.Shadiomrpoverhaul;
+import com.tirener.shadiom.shadiomrpoverhaul.network.faction.AllTerritoriesS2CPacket;
 import com.tirener.shadiom.shadiomrpoverhaul.network.faction.FactionActionC2SPacket;
-import com.tirener.shadiom.shadiomrpoverhaul.network.faction.FactionClaimsSyncS2CPacket;
 import com.tirener.shadiom.shadiomrpoverhaul.network.faction.OpenFactionScreenS2CPacket;
 import com.tirener.shadiom.shadiomrpoverhaul.network.faction.OpenTerritoryScreenS2CPacket;
+import com.tirener.shadiom.shadiomrpoverhaul.network.faction.RequestTerritoryMapC2SPacket;
 import com.tirener.shadiom.shadiomrpoverhaul.network.faction.TerritoryHudS2CPacket;
 import com.tirener.shadiom.shadiomrpoverhaul.network.names.NameSyncPacket;
 import com.tirener.shadiom.shadiomrpoverhaul.network.names.OpenNamePickerS2CPacket;
@@ -35,9 +36,12 @@ public class ModNetwork {
     private static final int ID_NAME_SYNC = 3;
     private static final int ID_OPEN_FACTION_SCREEN = 4;
     private static final int ID_FACTION_ACTION = 5;
-    private static final int ID_FACTION_CLAIMS_SYNC = 6;
+    // ID 6 (FactionClaimsSyncS2CPacket) is retired - superseded by ID_ALL_TERRITORIES. Never
+    // reuse a retired id.
     private static final int ID_OPEN_TERRITORY_SCREEN = 7;
     private static final int ID_TERRITORY_HUD_SYNC = 8;
+    private static final int ID_ALL_TERRITORIES = 9;
+    private static final int ID_REQUEST_TERRITORY_MAP = 10;
 
     public static void register() {
         CHANNEL.registerMessage(
@@ -89,14 +93,6 @@ public class ModNetwork {
                 Optional.of(NetworkDirection.PLAY_TO_SERVER)
         );
         CHANNEL.registerMessage(
-                ID_FACTION_CLAIMS_SYNC,
-                FactionClaimsSyncS2CPacket.class,
-                FactionClaimsSyncS2CPacket::encode,
-                FactionClaimsSyncS2CPacket::decode,
-                FactionClaimsSyncS2CPacket::handle,
-                Optional.of(NetworkDirection.PLAY_TO_CLIENT)
-        );
-        CHANNEL.registerMessage(
                 ID_OPEN_TERRITORY_SCREEN,
                 OpenTerritoryScreenS2CPacket.class,
                 OpenTerritoryScreenS2CPacket::encode,
@@ -111,6 +107,22 @@ public class ModNetwork {
                 TerritoryHudS2CPacket::decode,
                 TerritoryHudS2CPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_CLIENT)
+        );
+        CHANNEL.registerMessage(
+                ID_ALL_TERRITORIES,
+                AllTerritoriesS2CPacket.class,
+                AllTerritoriesS2CPacket::encode,
+                AllTerritoriesS2CPacket::decode,
+                AllTerritoriesS2CPacket::handle,
+                Optional.of(NetworkDirection.PLAY_TO_CLIENT)
+        );
+        CHANNEL.registerMessage(
+                ID_REQUEST_TERRITORY_MAP,
+                RequestTerritoryMapC2SPacket.class,
+                RequestTerritoryMapC2SPacket::encode,
+                RequestTerritoryMapC2SPacket::decode,
+                RequestTerritoryMapC2SPacket::handle,
+                Optional.of(NetworkDirection.PLAY_TO_SERVER)
         );
     }
 }

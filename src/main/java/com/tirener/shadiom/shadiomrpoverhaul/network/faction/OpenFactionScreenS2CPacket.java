@@ -21,8 +21,9 @@ import java.util.function.Supplier;
  * {@code mustCreateFaction} forces the create-only view (a Faction Center was placed by a
  * faction-less player, but they haven't submitted a name yet). {@code currentChunkOwner},
  * {@code canManageClaims}, {@code ownClaimedChunkKeys}, {@code otherFactionNames}/
- * {@code otherFactionRelations}, {@code incomingProposalNames} and {@code canManageDiplomacy}
- * are only meaningful when {@code hasFaction} is true.
+ * {@code otherFactionRelations}, {@code incomingProposalNames}, {@code canManageDiplomacy} and
+ * every {@code territory*} field are only meaningful when {@code hasFaction} is true.
+ * {@code territoryNames} has an empty string for a territory that hasn't been named yet.
  */
 public record OpenFactionScreenS2CPacket(
         boolean hasFaction,
@@ -42,7 +43,11 @@ public record OpenFactionScreenS2CPacket(
         List<String> otherFactionNames,
         List<String> otherFactionRelations,
         List<String> incomingProposalNames,
-        boolean canManageDiplomacy
+        boolean canManageDiplomacy,
+        List<String> territoryIds,
+        List<String> territoryNames,
+        List<Integer> territoryChunkCounts,
+        String capitalTerritoryId
 ) {
 
     public static void encode(OpenFactionScreenS2CPacket pkt, FriendlyByteBuf buf) {
@@ -64,6 +69,11 @@ public record OpenFactionScreenS2CPacket(
         writeStringList(buf, pkt.otherFactionRelations());
         writeStringList(buf, pkt.incomingProposalNames());
         buf.writeBoolean(pkt.canManageDiplomacy());
+        writeStringList(buf, pkt.territoryIds());
+        writeStringList(buf, pkt.territoryNames());
+        buf.writeVarInt(pkt.territoryChunkCounts().size());
+        for (int count : pkt.territoryChunkCounts()) buf.writeVarInt(count);
+        buf.writeUtf(pkt.capitalTerritoryId());
     }
 
     public static OpenFactionScreenS2CPacket decode(FriendlyByteBuf buf) {
@@ -85,18 +95,18 @@ public record OpenFactionScreenS2CPacket(
                 readStringList(buf),
                 readStringList(buf),
                 readStringList(buf),
-                buf.readBoolean()
+                buf.readBoolean(),
+                readStringList(buf),
+                readStringList(buf),
+                readIntList(buf),
+                buf.readUtf()
         );
     }
 
     public static void handle(OpenFactionScreenS2CPacket pkt, Supplier<NetworkEvent.Context> ctx) {
         ctx.get().enqueueWork(() ->
-                DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> openScreen(pkt)));
+                DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> Minecraft.getInstance().setScreen(new FactionScreen(pkt))));
         ctx.get().setPacketHandled(true);
-    }
-
-    private static void openScreen(OpenFactionScreenS2CPacket pkt) {
-        Minecraft.getInstance().setScreen(new FactionScreen(pkt));
     }
 
     private static void writeStringList(FriendlyByteBuf buf, List<String> list) {
@@ -108,6 +118,13 @@ public record OpenFactionScreenS2CPacket(
         int size = buf.readVarInt();
         List<String> list = new ArrayList<>(size);
         for (int i = 0; i < size; i++) list.add(buf.readUtf());
+        return list;
+    }
+
+    private static List<Integer> readIntList(FriendlyByteBuf buf) {
+        int size = buf.readVarInt();
+        List<Integer> list = new ArrayList<>(size);
+        for (int i = 0; i < size; i++) list.add(buf.readVarInt());
         return list;
     }
 }
