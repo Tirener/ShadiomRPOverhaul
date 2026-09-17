@@ -2,7 +2,9 @@ package com.tirener.shadiom.shadiomrpoverhaul.network;
 
 import com.tirener.shadiom.shadiomrpoverhaul.Shadiomrpoverhaul;
 import com.tirener.shadiom.shadiomrpoverhaul.network.faction.FactionActionC2SPacket;
+import com.tirener.shadiom.shadiomrpoverhaul.network.faction.FactionClaimsSyncS2CPacket;
 import com.tirener.shadiom.shadiomrpoverhaul.network.faction.OpenFactionScreenS2CPacket;
+import com.tirener.shadiom.shadiomrpoverhaul.network.faction.OpenTerritoryScreenS2CPacket;
 import com.tirener.shadiom.shadiomrpoverhaul.network.names.NameSyncPacket;
 import com.tirener.shadiom.shadiomrpoverhaul.network.names.OpenNamePickerS2CPacket;
 import com.tirener.shadiom.shadiomrpoverhaul.network.names.SubmitNamePickC2SPacket;
@@ -32,6 +34,8 @@ public class ModNetwork {
     private static final int ID_NAME_SYNC = 3;
     private static final int ID_OPEN_FACTION_SCREEN = 4;
     private static final int ID_FACTION_ACTION = 5;
+    private static final int ID_FACTION_CLAIMS_SYNC = 6;
+    private static final int ID_OPEN_TERRITORY_SCREEN = 7;
 
     public static void register() {
         CHANNEL.registerMessage(
@@ -81,6 +85,22 @@ public class ModNetwork {
                 FactionActionC2SPacket::decode,
                 FactionActionC2SPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_SERVER)
+        );
+        CHANNEL.registerMessage(
+                ID_FACTION_CLAIMS_SYNC,
+                FactionClaimsSyncS2CPacket.class,
+                FactionClaimsSyncS2CPacket::encode,
+                FactionClaimsSyncS2CPacket::decode,
+                FactionClaimsSyncS2CPacket::handle,
+                Optional.of(NetworkDirection.PLAY_TO_CLIENT)
+        );
+        CHANNEL.registerMessage(
+                ID_OPEN_TERRITORY_SCREEN,
+                OpenTerritoryScreenS2CPacket.class,
+                OpenTerritoryScreenS2CPacket::encode,
+                OpenTerritoryScreenS2CPacket::decode,
+                OpenTerritoryScreenS2CPacket::handle,
+                Optional.of(NetworkDirection.PLAY_TO_CLIENT)
         );
     }
 }

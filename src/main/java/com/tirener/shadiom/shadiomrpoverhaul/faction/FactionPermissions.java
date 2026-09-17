@@ -44,6 +44,10 @@ final class FactionPermissions {
         return actor == Faction.Role.LEADER;
     }
 
+    static boolean canManageTerritory(Faction.Role actor) {
+        return actor == Faction.Role.LEADER;
+    }
+
     public static void main(String[] args) {
         check(canInvite(Faction.Role.LEADER), "leader can invite");
         check(canInvite(Faction.Role.OFFICER), "officer can invite");
@@ -83,6 +87,10 @@ final class FactionPermissions {
         check(canManageDiplomacy(Faction.Role.LEADER), "leader can manage diplomacy");
         check(!canManageDiplomacy(Faction.Role.OFFICER), "officer cannot manage diplomacy");
         check(!canManageDiplomacy(Faction.Role.MEMBER), "member cannot manage diplomacy");
+
+        check(canManageTerritory(Faction.Role.LEADER), "leader can manage territory");
+        check(!canManageTerritory(Faction.Role.OFFICER), "officer cannot manage territory");
+        check(!canManageTerritory(Faction.Role.MEMBER), "member cannot manage territory");
 
         System.out.println("FactionPermissions self-check passed.");
     }

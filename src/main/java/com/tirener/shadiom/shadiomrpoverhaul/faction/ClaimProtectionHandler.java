@@ -8,6 +8,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
+import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -113,5 +114,26 @@ public final class ClaimProtectionHandler {
         if (claimEntry == null || claimEntry.factionId() == null) return;
         boolean isMember = faction != null && faction.id().equals(claimEntry.factionId());
         if (!isMember) event.setCanceled(true);
+    }
+
+    @SubscribeEvent
+    public static void onRightClick(PlayerInteractEvent.RightClickBlock event) {
+        if (!(event.getEntity() instanceof ServerPlayer sp)) return;
+        if (!event.getLevel().getBlockState(event.getPos()).is(ModBlocks.FACTION_CENTER.get())) return;
+
+        ServerLevel level = sp.serverLevel();
+        ChunkPos chunk = new ChunkPos(event.getPos());
+        ClaimsData claims = ClaimsData.get(level);
+        String key = ClaimsData.chunkKey(level.dimension(), chunk.x, chunk.z);
+        ClaimsData.ClaimEntry entry = claims.get(key);
+        if (entry == null || entry.factionId() == null) return;
+
+        FactionsData factions = FactionsData.get(level);
+        Faction faction = factions.factionOf(sp.getUUID());
+        if (faction == null || !faction.id().equals(entry.factionId())) return;
+        if (!FactionPermissions.canManageTerritory(faction.roleOf(sp.getUUID()))) return;
+
+        event.setCanceled(true);
+        FactionEventHandler.openTerritoryScreen(sp, faction, entry.territoryId());
     }
 }

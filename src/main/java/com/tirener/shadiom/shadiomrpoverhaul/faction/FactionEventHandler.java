@@ -5,6 +5,7 @@ import com.tirener.shadiom.shadiomrpoverhaul.network.ModNetwork;
 import com.tirener.shadiom.shadiomrpoverhaul.network.faction.FactionActionC2SPacket;
 import com.tirener.shadiom.shadiomrpoverhaul.network.faction.FactionClaimsSyncS2CPacket;
 import com.tirener.shadiom.shadiomrpoverhaul.network.faction.OpenFactionScreenS2CPacket;
+import com.tirener.shadiom.shadiomrpoverhaul.network.faction.OpenTerritoryScreenS2CPacket;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
@@ -50,6 +51,20 @@ public final class FactionEventHandler {
         send(player);
     }
 
+    /** Opens the territory management screen for one territory - only call after already
+     *  verifying the player is that faction's leader (see ClaimProtectionHandler's right-click
+     *  handler, the only caller). */
+    static void openTerritoryScreen(ServerPlayer player, Faction faction, String territoryId) {
+        Faction.Territory territory = faction.territory(territoryId);
+        if (territory == null) return;
+        int chunkCount = ClaimsData.get(player.serverLevel()).chunksOfTerritory(territoryId).size();
+        boolean isCapital = territoryId.equals(faction.capitalTerritoryId());
+
+        ModNetwork.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
+                new OpenTerritoryScreenS2CPacket(territoryId,
+                        territory.name() == null ? "" : territory.name(), chunkCount, isCapital));
+    }
+
     public static void handleAction(ServerPlayer player, FactionActionC2SPacket.Action action, String arg) {
         switch (action) {
             case CREATE -> create(player, arg);
@@ -69,6 +84,8 @@ public final class FactionEventHandler {
             case ACCEPT_ALLIANCE -> acceptAlliance(player, arg);
             case DECLINE_ALLIANCE -> declineAlliance(player, arg);
             case BREAK_ALLIANCE -> breakAlliance(player, arg);
+            case RENAME_TERRITORY -> renameTerritory(player, arg);
+            case SET_CAPITAL_TERRITORY -> setCapitalTerritory(player, arg);
         }
         send(player);
     }
@@ -364,6 +381,33 @@ public final class FactionEventHandler {
 
         diplomacy.clearRelation(faction.id(), target.id());
         DiplomacyReportWriter.write(actor.getServer());
+    }
+
+    private static void renameTerritory(ServerPlayer actor, String arg) {
+        FactionsData data = data(actor);
+        Faction faction = data.factionOf(actor.getUUID());
+        if (faction == null) return;
+        if (!FactionPermissions.canManageTerritory(faction.roleOf(actor.getUUID()))) return;
+
+        String[] parts = arg.split("\\|", 2);
+        if (parts.length != 2) return;
+        String territoryId = parts[0];
+        String name = parts[1];
+        if (faction.territory(territoryId) == null || name.isBlank()) return;
+
+        faction.renameTerritory(territoryId, name);
+        data.setDirty();
+    }
+
+    private static void setCapitalTerritory(ServerPlayer actor, String territoryId) {
+        FactionsData data = data(actor);
+        Faction faction = data.factionOf(actor.getUUID());
+        if (faction == null) return;
+        if (!FactionPermissions.canManageTerritory(faction.roleOf(actor.getUUID()))) return;
+        if (faction.territory(territoryId) == null) return;
+
+        faction.setCapitalTerritoryId(territoryId);
+        data.setDirty();
     }
 
     private static void clearInvites(FactionsData data, UUID player) {

@@ -14,7 +14,8 @@ public record FactionActionC2SPacket(Action action, String arg) {
 
     public enum Action {
         CREATE, INVITE, ACCEPT, DECLINE, KICK, PROMOTE, DEMOTE, LEAVE, DISBAND, CLAIM, UNCLAIM,
-        DECLARE_WAR, MAKE_PEACE, PROPOSE_ALLIANCE, ACCEPT_ALLIANCE, DECLINE_ALLIANCE, BREAK_ALLIANCE
+        DECLARE_WAR, MAKE_PEACE, PROPOSE_ALLIANCE, ACCEPT_ALLIANCE, DECLINE_ALLIANCE, BREAK_ALLIANCE,
+        RENAME_TERRITORY, SET_CAPITAL_TERRITORY
     }
 
     public static void encode(FactionActionC2SPacket pkt, FriendlyByteBuf buf) {
