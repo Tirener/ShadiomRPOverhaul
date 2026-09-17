@@ -60,6 +60,6 @@ final class TerritoryRules {
     }
 
     static int territoryChunkCount(ClaimsData claims, String territoryId) {
-        return claims.chunksOfTerritory(territoryId).size();
+        return claims.territoryChunkCount(territoryId);
     }
 }

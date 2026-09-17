@@ -35,13 +35,18 @@ public final class TerritoryMigration {
 
         for (Faction faction : factions.all()) {
             if (faction.capitalTerritoryId() != null) continue;
-            migrate(claims, faction);
+            if (migrate(claims, faction)) factions.setDirty();
         }
     }
 
-    private static void migrate(ClaimsData claims, Faction faction) {
+    /** Returns true if it actually assigned territories/a capital to {@code faction} - false (no
+     *  mutation) when the faction has no claims yet, so the caller knows not to mark
+     *  {@code FactionsData} dirty for nothing. Without this, a faction with no claims would never
+     *  get a capital recorded, and this method would keep re-running - harmlessly, since it's a
+     *  no-op - on every subsequent server start. */
+    private static boolean migrate(ClaimsData claims, Faction faction) {
         Set<String> remaining = new HashSet<>(claims.claimsOf(faction.id()));
-        if (remaining.isEmpty()) return; // nothing to migrate - leave capital null
+        if (remaining.isEmpty()) return false; // nothing to migrate - leave capital null
 
         List<String> territoryIdsInOrder = new ArrayList<>();
         String capitalCandidate = null;
@@ -62,6 +67,7 @@ public final class TerritoryMigration {
         }
 
         faction.setCapitalTerritoryId(capitalCandidate != null ? capitalCandidate : territoryIdsInOrder.get(0));
+        return true;
     }
 
     /** 4-directional BFS over already-claimed chunk keys, matching the adjacency rule these

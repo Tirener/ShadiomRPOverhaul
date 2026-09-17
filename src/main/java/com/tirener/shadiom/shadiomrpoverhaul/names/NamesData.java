@@ -14,7 +14,8 @@ import java.util.Set;
 
 /**
  * Level-wide record of every taken (firstName, surname) combo, so no two players end up with the
- * same full name. Only ever grows: there is no rename feature, so nothing needs to be freed.
+ * same full name. A combo is freed only by a rename giving it up (see {@link #release}) - a
+ * first-time pick never frees anything, since there's nothing to give up yet.
  */
 final class NamesData extends SavedData {
 
@@ -33,6 +34,13 @@ final class NamesData extends SavedData {
 
     void markTaken(String firstName, String surname) {
         takenCombos.add(comboKey(firstName, surname));
+        setDirty();
+    }
+
+    /** Frees a combo back to the pool - used by a rename, once the player's new combo is
+     *  confirmed, to give up whatever they held before. */
+    void release(String firstName, String surname) {
+        takenCombos.remove(comboKey(firstName, surname));
         setDirty();
     }
 

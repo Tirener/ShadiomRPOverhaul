@@ -67,12 +67,11 @@ public class FactionScreen extends Screen {
         }
 
         int shown = 0;
-        for (int i = 0; i < state.pendingInviteIds().size() && shown < MAX_ROWS; i++, shown++) {
-            String id = state.pendingInviteIds().get(i);
-            String name = state.pendingInviteNames().get(i);
-            addRow(Component.literal(name), List.of(
-                    new RowButton("Accept", b -> send(Action.ACCEPT, id)),
-                    new RowButton("Decline", b -> send(Action.DECLINE, id))));
+        for (OpenFactionScreenS2CPacket.PendingInvite invite : state.pendingInvites()) {
+            if (shown++ >= MAX_ROWS) break;
+            addRow(Component.literal(invite.factionName()), List.of(
+                    new RowButton("Accept", b -> send(Action.ACCEPT, invite.factionId())),
+                    new RowButton("Decline", b -> send(Action.DECLINE, invite.factionId()))));
         }
     }
 
@@ -83,10 +82,10 @@ public class FactionScreen extends Screen {
 
         y += 12;
         int shown = 0;
-        for (int i = 0; i < state.memberNames().size() && shown < MAX_ROWS; i++, shown++) {
-            String name = state.memberNames().get(i);
-            String displayName = state.memberDisplayNames().get(i);
-            String role = state.memberRoles().get(i);
+        for (OpenFactionScreenS2CPacket.MemberEntry member : state.members()) {
+            if (shown++ >= MAX_ROWS) break;
+            String name = member.name();
+            String role = member.role();
             boolean self = name.equals(selfName);
 
             List<RowButton> buttons = new ArrayList<>();
@@ -99,16 +98,16 @@ public class FactionScreen extends Screen {
             if (isLeader && !self && role.equals("OFFICER")) {
                 buttons.add(new RowButton("Demote", b -> send(Action.DEMOTE, name)));
             }
-            addRow(Component.literal(displayName + " - " + role), buttons);
+            addRow(Component.literal(member.displayName() + " - " + role), buttons);
         }
 
         if (canManage) {
             y += 12;
             shown = 0;
-            for (int i = 0; i < state.invitablePlayerNames().size() && shown < MAX_ROWS; i++, shown++) {
-                String name = state.invitablePlayerNames().get(i);
-                String displayName = state.invitableDisplayNames().get(i);
-                addRow(Component.literal(displayName), List.of(new RowButton("Invite", b -> send(Action.INVITE, name))));
+            for (OpenFactionScreenS2CPacket.InvitableEntry invitable : state.invitablePlayers()) {
+                if (shown++ >= MAX_ROWS) break;
+                String name = invitable.name();
+                addRow(Component.literal(invitable.displayName()), List.of(new RowButton("Invite", b -> send(Action.INVITE, name))));
             }
         }
 
@@ -124,14 +123,12 @@ public class FactionScreen extends Screen {
 
         y += 12;
         shown = 0;
-        for (int i = 0; i < state.territoryIds().size() && shown < MAX_ROWS; i++, shown++) {
-            String territoryId = state.territoryIds().get(i);
-            String territoryName = state.territoryNames().get(i);
-            int chunkCount = state.territoryChunkCounts().get(i);
-            boolean isCapital = territoryId.equals(state.capitalTerritoryId());
+        for (OpenFactionScreenS2CPacket.TerritoryInfo territory : state.territories()) {
+            if (shown++ >= MAX_ROWS) break;
+            boolean isCapital = territory.id().equals(state.capitalTerritoryId());
 
-            String label = (territoryName.isEmpty() ? "Unnamed Territory" : territoryName)
-                    + " - " + chunkCount + "/100" + (isCapital ? " (Capital)" : "");
+            String label = (territory.name().isEmpty() ? "Unnamed Territory" : territory.name())
+                    + " - " + territory.chunkCount() + "/100" + (isCapital ? " (Capital)" : "");
             addRow(Component.literal(label), List.of());
         }
 
@@ -150,9 +147,10 @@ public class FactionScreen extends Screen {
 
         y += 12;
         shown = 0;
-        for (int i = 0; i < state.otherFactionNames().size() && shown < MAX_ROWS; i++, shown++) {
-            String name = state.otherFactionNames().get(i);
-            String relation = state.otherFactionRelations().get(i);
+        for (OpenFactionScreenS2CPacket.OtherFaction otherFaction : state.otherFactions()) {
+            if (shown++ >= MAX_ROWS) break;
+            String name = otherFaction.name();
+            String relation = otherFaction.relation();
 
             List<RowButton> buttons = new ArrayList<>();
             if (state.canManageDiplomacy()) {

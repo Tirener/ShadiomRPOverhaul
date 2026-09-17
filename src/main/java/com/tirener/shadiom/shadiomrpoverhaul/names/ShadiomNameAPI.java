@@ -23,4 +23,12 @@ public final class ShadiomNameAPI {
         if (!NamePlayerData.hasPicked(player)) return "";
         return NamePlayerData.getFirstName(player) + " " + NamePlayerData.getSurname(player);
     }
+
+    /** Forces the name picker open so a player can pick a new name, even if they already have one
+     *  - e.g. from a staff tool or an in-character event trigger you control. No cooldown, no
+     *  permission check, and no trigger of its own: the caller decides when a rename should
+     *  happen. The player's current name stays reserved to them until they actually confirm a new
+     *  one - nothing is given up just by opening the picker. A no-op if the name pool has nothing
+     *  to offer (same guard as the first-join picker). */
+    public static void openRenamePicker(ServerPlayer player) { NameEventHandler.openPickerForRename(player); }
 }

@@ -89,6 +89,17 @@ public final class NameEventHandler {
         sendOpenPacket(joiner, firstNames, surnames, "");
     }
 
+    /** Entry point for {@code ShadiomNameAPI.openRenamePicker} - identical mechanics to the
+     *  first-join picker above (same empty-pool guard, same non-dismissible screen, same
+     *  timeout-to-random-assignment safety net), just usable on a player who already has a name.
+     *  The old combo isn't freed here - only {@link #attemptApply} frees it, at the moment a new
+     *  one is actually confirmed, so nothing is given up if the player disconnects mid-pick. */
+    public static void openPickerForRename(ServerPlayer player) {
+        MinecraftServer server = player.getServer();
+        if (server == null) return;
+        openPicker(player, server);
+    }
+
     @SubscribeEvent
     public static void onStartTracking(PlayerEvent.StartTracking event) {
         if (!(event.getTarget() instanceof ServerPlayer targetPlayer)) return;
@@ -142,10 +153,10 @@ public final class NameEventHandler {
     /** Entry point for {@code SubmitNamePickC2SPacket}. Re-validates against this player's
      *  current candidate lists and the uniqueness store before applying. */
     public static void handleSubmit(ServerPlayer player, String firstName, String surname) {
-        // Only a player who is actually mid-pick may submit. There is no rename feature, so
-        // without this a modified client could keep resubmitting after picking to rename itself at
-        // will, marking a fresh combo taken every time and draining a pool nothing ever frees.
-        if (NamePlayerData.hasPicked(player) || !PENDING_PICKS.containsKey(player.getUUID())) return;
+        // Only a player who is actually mid-pick (first pick or rename - either way, an open
+        // picker put them in PENDING_PICKS) may submit. Without this, a modified client could
+        // submit at any time, first-pick or not, marking a fresh combo taken every time.
+        if (!PENDING_PICKS.containsKey(player.getUUID())) return;
         attemptApply(player, firstName, surname, true);
     }
 
@@ -155,8 +166,15 @@ public final class NameEventHandler {
         List<String> validSurnames = NameRegistry.candidateSurnames(player);
         NamesData data = NamesData.get(player.serverLevel());
 
+        // A renaming player reselecting their own current name would otherwise be rejected as
+        // "taken" - it's reserved to them until this call either frees it (below) or fails, so
+        // nothing else could ever have grabbed it in between either way.
+        boolean ownCurrentCombo = NamePlayerData.hasPicked(player)
+                && firstName.equals(NamePlayerData.getFirstName(player))
+                && surname.equals(NamePlayerData.getSurname(player));
+
         if (!validFirst.contains(firstName) || !validSurnames.contains(surname)
-                || data.isTaken(firstName, surname)) {
+                || (!ownCurrentCombo && data.isTaken(firstName, surname))) {
             if (sendErrorOnFailure) {
                 sendOpenPacket(player, validFirst, validSurnames,
                         "That name is no longer available. Please choose another.");
@@ -164,6 +182,9 @@ public final class NameEventHandler {
             return false;
         }
 
+        if (NamePlayerData.hasPicked(player)) {
+            data.release(NamePlayerData.getFirstName(player), NamePlayerData.getSurname(player));
+        }
         NamePlayerData.set(player, firstName, surname);
         data.markTaken(firstName, surname);
         PENDING_PICKS.remove(player.getUUID());

@@ -3,6 +3,7 @@ package com.tirener.shadiom.shadiomrpoverhaul.faction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.saveddata.SavedData;
 import org.jetbrains.annotations.NotNull;
@@ -22,6 +23,11 @@ final class ClaimsData extends SavedData {
     private final Map<String, ClaimEntry> claims = new HashMap<>();
     private final Map<String, Set<String>> claimsByFaction = new HashMap<>();
     private final Map<String, AnchorLocation> factionCenterLocations = new HashMap<>();
+    /** Chunk count per territoryId, maintained incrementally alongside {@code claims} so
+     *  {@link #territoryChunkCount} (checked on every claim attempt, and once per territory in
+     *  every faction-screen snapshot) doesn't need to rescan every claim in the world. Rebuilt
+     *  from scratch once in {@link #load}, not persisted itself. */
+    private final Map<String, Integer> territoryChunkCounts = new HashMap<>();
 
     record ClaimEntry(String factionId, String territoryId, boolean factionCenter) {}
 
@@ -57,17 +63,28 @@ final class ClaimsData extends SavedData {
     }
 
     void claim(String chunkKey, String factionId, String territoryId, boolean factionCenter) {
+        ClaimEntry previous = claims.get(chunkKey);
         unindexPrevious(chunkKey);
         claims.put(chunkKey, new ClaimEntry(factionId, territoryId, factionCenter));
         claimsByFaction.computeIfAbsent(factionId, k -> new HashSet<>()).add(chunkKey);
+        // Only recount if the territoryId is actually changing - re-claiming a chunk that already
+        // belongs to this same territory (e.g. re-adding the factionCenter flag) must not inflate
+        // the count for a chunk that was already being counted.
+        if (previous == null || !territoryId.equals(previous.territoryId())) {
+            if (previous != null) decrementTerritoryCount(previous.territoryId());
+            incrementTerritoryCount(territoryId);
+        }
         setDirty();
     }
 
     void unclaim(String chunkKey) {
         ClaimEntry entry = claims.remove(chunkKey);
-        if (entry != null && entry.factionId() != null) {
-            Set<String> owned = claimsByFaction.get(entry.factionId());
-            if (owned != null) owned.remove(chunkKey);
+        if (entry != null) {
+            if (entry.factionId() != null) {
+                Set<String> owned = claimsByFaction.get(entry.factionId());
+                if (owned != null) owned.remove(chunkKey);
+            }
+            decrementTerritoryCount(entry.territoryId());
         }
         setDirty();
     }
@@ -89,7 +106,9 @@ final class ClaimsData extends SavedData {
     void reassignTerritoryId(String chunkKey, String territoryId) {
         ClaimEntry entry = claims.get(chunkKey);
         if (entry == null) return;
+        decrementTerritoryCount(entry.territoryId());
         claims.put(chunkKey, new ClaimEntry(entry.factionId(), territoryId, entry.factionCenter()));
+        incrementTerritoryCount(territoryId);
         setDirty();
     }
 
@@ -98,10 +117,28 @@ final class ClaimsData extends SavedData {
     void repossess(Set<String> chunkKeys, String newFactionId, String newTerritoryId, String factionCenterChunkKey) {
         for (String chunkKey : chunkKeys) {
             boolean isAnchor = chunkKey.equals(factionCenterChunkKey);
+            ClaimEntry previous = claims.get(chunkKey);
+            if (previous != null) decrementTerritoryCount(previous.territoryId());
             claims.put(chunkKey, new ClaimEntry(newFactionId, newTerritoryId, isAnchor));
         }
         claimsByFaction.computeIfAbsent(newFactionId, k -> new HashSet<>()).addAll(chunkKeys);
+        territoryChunkCounts.merge(newTerritoryId, chunkKeys.size(), Integer::sum);
         setDirty();
+    }
+
+    /** O(1) chunk count for one territory, backed by the incrementally-maintained
+     *  {@link #territoryChunkCounts} - unlike {@link #chunksOfTerritory}, which scans every claim
+     *  and should only be used where the actual chunk set (not just its size) is needed. */
+    int territoryChunkCount(String territoryId) {
+        return territoryChunkCounts.getOrDefault(territoryId, 0);
+    }
+
+    private void incrementTerritoryCount(String territoryId) {
+        territoryChunkCounts.merge(territoryId, 1, Integer::sum);
+    }
+
+    private void decrementTerritoryCount(String territoryId) {
+        territoryChunkCounts.computeIfPresent(territoryId, (id, count) -> count <= 1 ? null : count - 1);
     }
 
     /** Every chunk sharing a territoryId, regardless of owner (including abandoned chunks) - a
@@ -114,9 +151,14 @@ final class ClaimsData extends SavedData {
         return result;
     }
 
+    /** Clears the faction-ownership index for whatever chunk previously sat at this key, if any -
+     *  callers are responsible for their own {@code territoryChunkCounts} bookkeeping, since
+     *  unlike faction ownership, a chunk's territoryId doesn't always change (e.g. {@link #abandon}
+     *  keeps it, so the count must stay untouched there). */
     private void unindexPrevious(String chunkKey) {
         ClaimEntry previous = claims.get(chunkKey);
-        if (previous != null && previous.factionId() != null) {
+        if (previous == null) return;
+        if (previous.factionId() != null) {
             Set<String> previousOwned = claimsByFaction.get(previous.factionId());
             if (previousOwned != null) previousOwned.remove(chunkKey);
         }
@@ -128,6 +170,14 @@ final class ClaimsData extends SavedData {
 
     static String chunkKey(ResourceKey<Level> dimension, int chunkX, int chunkZ) {
         return dimension.location() + "," + chunkX + "," + chunkZ;
+    }
+
+    /** Inverse of {@link #chunkKey} - the chunk coordinates only, since callers filtering by
+     *  dimension (everyone - see {@link #chunkKey}'s own dimension-prefixed shape) already know
+     *  which dimension a matched key belongs to. */
+    static ChunkPos parseChunkPos(String chunkKey) {
+        String[] parts = chunkKey.split(",");
+        return new ChunkPos(Integer.parseInt(parts[1]), Integer.parseInt(parts[2]));
     }
 
     @Override
@@ -168,6 +218,7 @@ final class ClaimsData extends SavedData {
             String territoryId = value.contains("territoryId") ? value.getString("territoryId") : key;
             data.claims.put(key, new ClaimEntry(factionId, territoryId, factionCenter));
             if (factionId != null) data.claimsByFaction.computeIfAbsent(factionId, k -> new HashSet<>()).add(key);
+            data.incrementTerritoryCount(territoryId);
         }
 
         CompoundTag anchorsTag = nbt.getCompound("factionCenterLocations");

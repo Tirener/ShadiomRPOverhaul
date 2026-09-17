@@ -76,6 +76,14 @@ final class FactionsData extends SavedData {
         setDirty();
     }
 
+    /** Strips every pending invite pointing at a faction id, e.g. right before that id is freed
+     *  up by a disband - otherwise a stale invite could later resolve to an unrelated faction
+     *  that happens to reuse the same name/slug. */
+    void removeInvitesReferencing(String factionId) {
+        pendingInvites.values().removeIf(invites -> invites.remove(factionId) && invites.isEmpty());
+        setDirty();
+    }
+
     @Override
     public @NotNull CompoundTag save(CompoundTag nbt) {
         ListTag factionList = new ListTag();

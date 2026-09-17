@@ -62,7 +62,7 @@ public final class FactionEventHandler {
     static void openTerritoryScreen(ServerPlayer player, Faction faction, String territoryId) {
         Faction.Territory territory = faction.territory(territoryId);
         if (territory == null) return;
-        int chunkCount = ClaimsData.get(player.serverLevel()).chunksOfTerritory(territoryId).size();
+        int chunkCount = ClaimsData.get(player.serverLevel()).territoryChunkCount(territoryId);
         boolean isCapital = territoryId.equals(faction.capitalTerritoryId());
 
         ModNetwork.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
@@ -103,7 +103,13 @@ public final class FactionEventHandler {
         if (name == null || name.isBlank()) return;
 
         String id = slug(name);
-        if (data.exists(id)) return;
+        if (data.exists(id)) {
+            // The create screen can't be dismissed until this succeeds (see FactionScreen), so
+            // unlike every other silent no-op in this class, the player needs to be told why
+            // nothing happened - otherwise a name collision looks like a stuck/broken screen.
+            player.sendSystemMessage(Component.literal("A faction named \"" + name + "\" already exists - pick a different name."));
+            return;
+        }
 
         Faction faction = new Faction(id, name, player.getUUID());
         String territoryId = UUID.randomUUID().toString();
@@ -232,7 +238,9 @@ public final class FactionEventHandler {
 
         claims.releaseAll(faction.id());
         DiplomacyData.get(server.overworld()).releaseAll(faction.id());
-        FactionsData.get(server.overworld()).remove(faction.id());
+        FactionsData factionsData = FactionsData.get(server.overworld());
+        factionsData.removeInvitesReferencing(faction.id());
+        factionsData.remove(faction.id());
         DiplomacyReportWriter.write(server);
         broadcastTerritoryMap(server);
     }
@@ -493,39 +501,32 @@ public final class FactionEventHandler {
 
         if (faction == null) {
             boolean mustCreate = PENDING_CAPITALS.containsKey(player.getUUID());
-            List<String> inviteIds = new ArrayList<>();
-            List<String> inviteNames = new ArrayList<>();
+            List<OpenFactionScreenS2CPacket.PendingInvite> invites = new ArrayList<>();
             if (!mustCreate) {
                 for (String id : data.invitesOf(player.getUUID())) {
                     Faction invited = data.get(id);
                     if (invited == null) continue;
-                    inviteIds.add(id);
-                    inviteNames.add(invited.name());
+                    invites.add(new OpenFactionScreenS2CPacket.PendingInvite(id, invited.name()));
                 }
             }
             return new OpenFactionScreenS2CPacket(false, mustCreate, "", "", List.of(), List.of(),
-                    List.of(), List.of(), List.of(), inviteIds, inviteNames, "", false, List.of(),
-                    List.of(), List.of(), List.of(), false, List.of(), List.of(), List.of(), "");
+                    invites, "", false, List.of(), List.of(), List.of(), false, List.of(), "");
         }
 
-        List<String> memberNames = new ArrayList<>();
-        List<String> memberDisplayNames = new ArrayList<>();
-        List<String> memberRoles = new ArrayList<>();
+        List<OpenFactionScreenS2CPacket.MemberEntry> members = new ArrayList<>();
         MinecraftServer server = player.getServer();
         for (UUID uuid : faction.allMembers()) {
             ServerPlayer member = server.getPlayerList().getPlayer(uuid);
             if (member == null) continue; // offline members aren't listed - see design spec
-            memberNames.add(member.getGameProfile().getName());
-            memberDisplayNames.add(displayNameOf(member));
-            memberRoles.add(faction.roleOf(uuid).name());
+            members.add(new OpenFactionScreenS2CPacket.MemberEntry(
+                    member.getGameProfile().getName(), displayNameOf(member), faction.roleOf(uuid).name()));
         }
 
-        List<String> invitable = new ArrayList<>();
-        List<String> invitableDisplayNames = new ArrayList<>();
+        List<OpenFactionScreenS2CPacket.InvitableEntry> invitable = new ArrayList<>();
         for (ServerPlayer online : server.getPlayerList().getPlayers()) {
             if (data.factionOf(online.getUUID()) != null) continue;
-            invitable.add(online.getGameProfile().getName());
-            invitableDisplayNames.add(displayNameOf(online));
+            invitable.add(new OpenFactionScreenS2CPacket.InvitableEntry(
+                    online.getGameProfile().getName(), displayNameOf(online)));
         }
 
         ClaimsData claims = ClaimsData.get(player.serverLevel());
@@ -545,13 +546,12 @@ public final class FactionEventHandler {
         }
 
         DiplomacyData diplomacy = DiplomacyData.get(player.serverLevel());
-        List<String> otherFactionNames = new ArrayList<>();
-        List<String> otherFactionRelations = new ArrayList<>();
+        List<OpenFactionScreenS2CPacket.OtherFaction> otherFactions = new ArrayList<>();
         for (Faction other : data.all()) {
             if (other.id().equals(faction.id())) continue;
             DiplomacyData.Relation relation = diplomacy.relationBetween(faction.id(), other.id());
-            otherFactionNames.add(other.name());
-            otherFactionRelations.add(relation == null ? "NEUTRAL" : relation.name());
+            otherFactions.add(new OpenFactionScreenS2CPacket.OtherFaction(
+                    other.name(), relation == null ? "NEUTRAL" : relation.name()));
         }
 
         List<String> incomingProposals = new ArrayList<>();
@@ -560,22 +560,19 @@ public final class FactionEventHandler {
             if (proposer != null) incomingProposals.add(proposer.name());
         }
 
-        List<String> territoryIds = new ArrayList<>();
-        List<String> territoryNames = new ArrayList<>();
-        List<Integer> territoryChunkCounts = new ArrayList<>();
+        List<OpenFactionScreenS2CPacket.TerritoryInfo> territories = new ArrayList<>();
         for (Faction.Territory territory : faction.territories().values()) {
-            territoryIds.add(territory.id());
-            territoryNames.add(territory.name() == null ? "" : territory.name());
-            territoryChunkCounts.add(claims.chunksOfTerritory(territory.id()).size());
+            territories.add(new OpenFactionScreenS2CPacket.TerritoryInfo(territory.id(),
+                    territory.name() == null ? "" : territory.name(),
+                    claims.territoryChunkCount(territory.id())));
         }
 
         Faction.Role role = faction.roleOf(player.getUUID());
         return new OpenFactionScreenS2CPacket(true, false, faction.name(), role.name(),
-                memberNames, memberDisplayNames, memberRoles, invitable, invitableDisplayNames,
-                List.of(), List.of(), currentChunkOwner,
+                members, invitable, List.of(), currentChunkOwner,
                 FactionPermissions.canManageClaims(role), ownClaims,
-                otherFactionNames, otherFactionRelations, incomingProposals,
+                otherFactions, incomingProposals,
                 FactionPermissions.canManageDiplomacy(role),
-                territoryIds, territoryNames, territoryChunkCounts, faction.capitalTerritoryId());
+                territories, faction.capitalTerritoryId());
     }
 }

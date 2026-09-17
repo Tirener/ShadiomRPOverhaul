@@ -93,6 +93,7 @@ public final class ClaimProtectionHandler {
                 if (TerritoryRules.anyTerritoryAdjacent(claims, dimension, chunk)) { event.setCanceled(true); return; }
                 String territoryId = java.util.UUID.randomUUID().toString();
                 faction.addTerritory(new Faction.Territory(territoryId, null));
+                factions.setDirty();
                 claims.claim(key, faction.id(), territoryId, true);
                 claims.recordFactionCenter(territoryId, dimension.location().toString(), event.getPos().asLong());
                 FactionEventHandler.broadcastTerritoryMap(sp.getServer());
@@ -104,6 +105,7 @@ public final class ClaimProtectionHandler {
                 Set<String> blob = claims.chunksOfTerritory(existing.territoryId());
                 String territoryId = java.util.UUID.randomUUID().toString();
                 faction.addTerritory(new Faction.Territory(territoryId, null));
+                factions.setDirty();
                 claims.repossess(blob, faction.id(), territoryId, key);
                 claims.recordFactionCenter(territoryId, dimension.location().toString(), event.getPos().asLong());
                 FactionEventHandler.broadcastTerritoryMap(sp.getServer());

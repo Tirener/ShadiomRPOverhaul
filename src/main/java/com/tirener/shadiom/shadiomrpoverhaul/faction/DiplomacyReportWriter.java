@@ -18,6 +18,8 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /** Writes a static HTML snapshot of the current diplomatic situation to
  *  "&lt;world save folder&gt;/ShadiomRP/diplomacy.html" - see the design spec. Regenerated after
@@ -30,22 +32,43 @@ public final class DiplomacyReportWriter {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
+    /** Single background thread for the actual disk write - not a shared pool - so that writes
+     *  from rapid successive actions (e.g. two diplomacy changes a tick apart) are applied in the
+     *  same order they were submitted, rather than racing to completion in whatever order an
+     *  arbitrary pool thread happens to pick them up. */
+    private static final ExecutorService WRITE_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "shadiomrpoverhaul-diplomacy-writer");
+        thread.setDaemon(true);
+        return thread;
+    });
+
     @SubscribeEvent
     public static void onServerStarted(ServerStartedEvent event) {
         write(event.getServer());
     }
 
+    /** Reads faction/diplomacy state and builds the HTML synchronously (cheap, in-memory, and
+     *  must happen on the calling thread since that state isn't thread-safe), then hands the
+     *  actual disk write to {@link #WRITE_EXECUTOR} - this runs after nearly every faction/
+     *  diplomacy action, and blocking the server tick thread on file I/O that often would stall
+     *  the whole server under load. */
     static void write(MinecraftServer server) {
         try {
             FactionsData factions = FactionsData.get(server.overworld());
             DiplomacyData diplomacy = DiplomacyData.get(server.overworld());
             String html = buildHtml(factions, diplomacy);
-
             Path dir = server.getWorldPath(LevelResource.ROOT).resolve("ShadiomRP");
-            Files.createDirectories(dir);
-            Files.writeString(dir.resolve("diplomacy.html"), html);
-        } catch (IOException e) {
-            LOGGER.warn("Failed to write the diplomacy report", e);
+
+            WRITE_EXECUTOR.execute(() -> {
+                try {
+                    Files.createDirectories(dir);
+                    Files.writeString(dir.resolve("diplomacy.html"), html);
+                } catch (IOException e) {
+                    LOGGER.warn("Failed to write the diplomacy report", e);
+                }
+            });
+        } catch (RuntimeException e) {
+            LOGGER.warn("Failed to build the diplomacy report", e);
         }
     }
 
