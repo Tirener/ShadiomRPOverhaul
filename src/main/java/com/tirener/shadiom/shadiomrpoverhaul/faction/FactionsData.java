@@ -99,6 +99,18 @@ final class FactionsData extends SavedData {
         tag.putUUID("leader", faction.leader());
         tag.put("officers", writeUuidList(faction.officers()));
         tag.put("members", writeUuidList(faction.members()));
+
+        ListTag territoriesTag = new ListTag();
+        for (Faction.Territory territory : faction.territories().values()) {
+            CompoundTag t = new CompoundTag();
+            t.putString("id", territory.id());
+            if (territory.name() != null) t.putString("name", territory.name());
+            territoriesTag.add(t);
+        }
+        tag.put("territories", territoriesTag);
+        if (faction.capitalTerritoryId() != null) {
+            tag.putString("capitalTerritoryId", faction.capitalTerritoryId());
+        }
         return tag;
     }
 
@@ -135,6 +147,16 @@ final class FactionsData extends SavedData {
         }
         for (String uuid : readUuidStrings(tag.getList("members", Tag.TAG_STRING))) {
             faction.addMember(UUID.fromString(uuid));
+        }
+
+        ListTag territoriesTag = tag.getList("territories", Tag.TAG_COMPOUND);
+        for (int i = 0; i < territoriesTag.size(); i++) {
+            CompoundTag t = territoriesTag.getCompound(i);
+            String name = t.contains("name") ? t.getString("name") : null;
+            faction.addTerritory(new Faction.Territory(t.getString("id"), name));
+        }
+        if (tag.contains("capitalTerritoryId")) {
+            faction.setCapitalTerritoryId(tag.getString("capitalTerritoryId"));
         }
         return faction;
     }
