@@ -3,6 +3,7 @@ package com.tirener.shadiom.shadiomrpoverhaul.faction;
 import com.tirener.shadiom.shadiomrpoverhaul.network.ModNetwork;
 import com.tirener.shadiom.shadiomrpoverhaul.network.faction.FactionActionC2SPacket;
 import com.tirener.shadiom.shadiomrpoverhaul.network.faction.OpenFactionScreenS2CPacket;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.PacketDistributor;
@@ -64,7 +65,8 @@ public final class FactionEventHandler {
         if (data.factionOf(target.getUUID()) != null) return; // also rejects self-invite
 
         data.addInvite(target.getUUID(), faction.id());
-        send(target);
+        target.sendSystemMessage(Component.literal(
+                "You've been invited to join " + faction.name() + ". Run /faction to respond."));
     }
 
     private static void acceptInvite(ServerPlayer player, String factionId) {
@@ -100,7 +102,7 @@ public final class FactionEventHandler {
 
         faction.removeMember(target.getUUID());
         data.reindex(faction);
-        send(target);
+        target.sendSystemMessage(Component.literal("You've been kicked from " + faction.name() + "."));
     }
 
     private static void promote(ServerPlayer actor, String targetName) {

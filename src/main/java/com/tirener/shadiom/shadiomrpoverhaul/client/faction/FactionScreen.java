@@ -86,7 +86,9 @@ public class FactionScreen extends Screen {
             boolean self = name.equals(selfName);
 
             List<RowButton> buttons = new ArrayList<>();
-            if (canManage && !self) buttons.add(new RowButton("Kick", b -> send(Action.KICK, name)));
+            boolean canKickThis = !self && ((isLeader && !role.equals("LEADER"))
+                    || (state.viewerRole().equals("OFFICER") && role.equals("MEMBER")));
+            if (canKickThis) buttons.add(new RowButton("Kick", b -> send(Action.KICK, name)));
             if (isLeader && !self && role.equals("MEMBER")) {
                 buttons.add(new RowButton("Promote", b -> send(Action.PROMOTE, name)));
             }
