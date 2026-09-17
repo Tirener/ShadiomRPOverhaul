@@ -40,6 +40,10 @@ final class FactionPermissions {
         return actor == Faction.Role.LEADER;
     }
 
+    static boolean canManageDiplomacy(Faction.Role actor) {
+        return actor == Faction.Role.LEADER;
+    }
+
     public static void main(String[] args) {
         check(canInvite(Faction.Role.LEADER), "leader can invite");
         check(canInvite(Faction.Role.OFFICER), "officer can invite");
@@ -75,6 +79,10 @@ final class FactionPermissions {
         check(canBreakFactionCenter(Faction.Role.LEADER), "leader can break a faction center");
         check(!canBreakFactionCenter(Faction.Role.OFFICER), "officer cannot break a faction center");
         check(!canBreakFactionCenter(Faction.Role.MEMBER), "member cannot break a faction center");
+
+        check(canManageDiplomacy(Faction.Role.LEADER), "leader can manage diplomacy");
+        check(!canManageDiplomacy(Faction.Role.OFFICER), "officer cannot manage diplomacy");
+        check(!canManageDiplomacy(Faction.Role.MEMBER), "member cannot manage diplomacy");
 
         System.out.println("FactionPermissions self-check passed.");
     }

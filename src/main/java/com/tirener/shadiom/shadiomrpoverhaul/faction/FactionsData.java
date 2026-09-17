@@ -8,6 +8,8 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.saveddata.SavedData;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -26,6 +28,10 @@ final class FactionsData extends SavedData {
     Faction get(String id) { return factions.get(id); }
 
     boolean exists(String id) { return factions.containsKey(id); }
+
+    Collection<Faction> all() {
+        return Collections.unmodifiableCollection(factions.values());
+    }
 
     Faction factionOf(UUID player) {
         String id = memberIndex.get(player);
