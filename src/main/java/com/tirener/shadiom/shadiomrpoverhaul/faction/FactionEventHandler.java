@@ -2,6 +2,7 @@ package com.tirener.shadiom.shadiomrpoverhaul.faction;
 
 import com.tirener.shadiom.shadiomrpoverhaul.network.ModNetwork;
 import com.tirener.shadiom.shadiomrpoverhaul.network.faction.FactionActionC2SPacket;
+import com.tirener.shadiom.shadiomrpoverhaul.names.ShadiomNameAPI;
 import com.tirener.shadiom.shadiomrpoverhaul.network.faction.OpenFactionScreenS2CPacket;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
@@ -184,27 +185,40 @@ public final class FactionEventHandler {
                 inviteNames.add(invited.name());
             }
             return new OpenFactionScreenS2CPacket(false, "", "", List.of(), List.of(), List.of(),
-                    inviteIds, inviteNames);
+                    List.of(), List.of(), inviteIds, inviteNames);
         }
 
         List<String> memberNames = new ArrayList<>();
+        List<String> memberDisplayNames = new ArrayList<>();
         List<String> memberRoles = new ArrayList<>();
         MinecraftServer server = player.getServer();
         for (UUID uuid : faction.allMembers()) {
             ServerPlayer member = server.getPlayerList().getPlayer(uuid);
             if (member == null) continue; // offline members aren't listed - see design spec
             memberNames.add(member.getGameProfile().getName());
+            memberDisplayNames.add(displayNameOf(member));
             memberRoles.add(faction.roleOf(uuid).name());
         }
 
         List<String> invitable = new ArrayList<>();
+        List<String> invitableDisplayNames = new ArrayList<>();
         for (ServerPlayer online : server.getPlayerList().getPlayers()) {
             if (data.factionOf(online.getUUID()) != null) continue;
             invitable.add(online.getGameProfile().getName());
+            invitableDisplayNames.add(displayNameOf(online));
         }
 
         String viewerRole = faction.roleOf(player.getUUID()).name();
         return new OpenFactionScreenS2CPacket(true, faction.name(), viewerRole,
-                memberNames, memberRoles, invitable, List.of(), List.of());
+                memberNames, memberDisplayNames, memberRoles, invitable, invitableDisplayNames,
+                List.of(), List.of());
+    }
+
+    /** The RP name (Name & Surname), or the account username if the player hasn't picked one -
+     *  same fallback {@code ProximityChatEventHandler} already uses. */
+    private static String displayNameOf(ServerPlayer player) {
+        return ShadiomNameAPI.hasPicked(player)
+                ? ShadiomNameAPI.displayName(player)
+                : player.getGameProfile().getName();
     }
 }

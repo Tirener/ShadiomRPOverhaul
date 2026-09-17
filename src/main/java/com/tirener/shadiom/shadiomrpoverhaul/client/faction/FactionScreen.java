@@ -82,6 +82,7 @@ public class FactionScreen extends Screen {
         int shown = 0;
         for (int i = 0; i < state.memberNames().size() && shown < MAX_ROWS; i++, shown++) {
             String name = state.memberNames().get(i);
+            String displayName = state.memberDisplayNames().get(i);
             String role = state.memberRoles().get(i);
             boolean self = name.equals(selfName);
 
@@ -95,7 +96,7 @@ public class FactionScreen extends Screen {
             if (isLeader && !self && role.equals("OFFICER")) {
                 buttons.add(new RowButton("Demote", b -> send(Action.DEMOTE, name)));
             }
-            addRow(Component.literal(name + " - " + role), buttons);
+            addRow(Component.literal(displayName + " - " + role), buttons);
         }
 
         if (canManage) {
@@ -103,7 +104,8 @@ public class FactionScreen extends Screen {
             shown = 0;
             for (int i = 0; i < state.invitablePlayerNames().size() && shown < MAX_ROWS; i++, shown++) {
                 String name = state.invitablePlayerNames().get(i);
-                addRow(Component.literal(name), List.of(new RowButton("Invite", b -> send(Action.INVITE, name))));
+                String displayName = state.invitableDisplayNames().get(i);
+                addRow(Component.literal(displayName), List.of(new RowButton("Invite", b -> send(Action.INVITE, name))));
             }
         }
 
