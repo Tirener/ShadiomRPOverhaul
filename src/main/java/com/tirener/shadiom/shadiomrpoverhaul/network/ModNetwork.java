@@ -5,6 +5,7 @@ import com.tirener.shadiom.shadiomrpoverhaul.network.faction.FactionActionC2SPac
 import com.tirener.shadiom.shadiomrpoverhaul.network.faction.FactionClaimsSyncS2CPacket;
 import com.tirener.shadiom.shadiomrpoverhaul.network.faction.OpenFactionScreenS2CPacket;
 import com.tirener.shadiom.shadiomrpoverhaul.network.faction.OpenTerritoryScreenS2CPacket;
+import com.tirener.shadiom.shadiomrpoverhaul.network.faction.TerritoryHudS2CPacket;
 import com.tirener.shadiom.shadiomrpoverhaul.network.names.NameSyncPacket;
 import com.tirener.shadiom.shadiomrpoverhaul.network.names.OpenNamePickerS2CPacket;
 import com.tirener.shadiom.shadiomrpoverhaul.network.names.SubmitNamePickC2SPacket;
@@ -36,6 +37,7 @@ public class ModNetwork {
     private static final int ID_FACTION_ACTION = 5;
     private static final int ID_FACTION_CLAIMS_SYNC = 6;
     private static final int ID_OPEN_TERRITORY_SCREEN = 7;
+    private static final int ID_TERRITORY_HUD_SYNC = 8;
 
     public static void register() {
         CHANNEL.registerMessage(
@@ -100,6 +102,14 @@ public class ModNetwork {
                 OpenTerritoryScreenS2CPacket::encode,
                 OpenTerritoryScreenS2CPacket::decode,
                 OpenTerritoryScreenS2CPacket::handle,
+                Optional.of(NetworkDirection.PLAY_TO_CLIENT)
+        );
+        CHANNEL.registerMessage(
+                ID_TERRITORY_HUD_SYNC,
+                TerritoryHudS2CPacket.class,
+                TerritoryHudS2CPacket::encode,
+                TerritoryHudS2CPacket::decode,
+                TerritoryHudS2CPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_CLIENT)
         );
     }
