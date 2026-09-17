@@ -19,11 +19,12 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** All faction membership and claim rules live here - validates the actor's role against
- *  {@link FactionPermissions}, mutates {@link FactionsData}/{@link ClaimsData}, and refreshes
- *  the acting player's screen afterward. Every branch below is a silent no-op on failure
- *  (offline target, wrong role, stale state, ...) per the design spec's error-handling
- *  section - the refreshed snapshot sent at the end simply shows the actor nothing changed. */
+/** All faction membership, claim, and diplomacy rules live here - validates the actor's role
+ *  against {@link FactionPermissions}, mutates {@link FactionsData}/{@link ClaimsData}/
+ *  {@link DiplomacyData}, and refreshes the acting player's screen afterward. Every branch below
+ *  is a silent no-op on failure (offline target, wrong role, stale state, ...) per the design
+ *  spec's error-handling section - the refreshed snapshot sent at the end simply shows the actor
+ *  nothing changed. */
 public final class FactionEventHandler {
 
     private FactionEventHandler() {}
@@ -61,6 +62,12 @@ public final class FactionEventHandler {
             case DISBAND -> disband(player);
             case CLAIM -> claim(player);
             case UNCLAIM -> unclaim(player);
+            case DECLARE_WAR -> declareWar(player, arg);
+            case MAKE_PEACE -> makePeace(player, arg);
+            case PROPOSE_ALLIANCE -> proposeAlliance(player, arg);
+            case ACCEPT_ALLIANCE -> acceptAlliance(player, arg);
+            case DECLINE_ALLIANCE -> declineAlliance(player, arg);
+            case BREAK_ALLIANCE -> breakAlliance(player, arg);
         }
         send(player);
     }
@@ -79,6 +86,7 @@ public final class FactionEventHandler {
         ClaimsData.get(player.serverLevel()).claim(
                 ClaimsData.chunkKey(pending.dimension(), pending.chunkX(), pending.chunkZ()), id, true);
         PENDING_CAPITALS.remove(player.getUUID());
+        DiplomacyReportWriter.write(player.getServer());
     }
 
     private static void invite(ServerPlayer actor, String targetName) {
@@ -177,7 +185,9 @@ public final class FactionEventHandler {
         if (!FactionPermissions.canDisband(faction.roleOf(player.getUUID()))) return;
 
         ClaimsData.get(player.serverLevel()).releaseAll(faction.id());
+        DiplomacyData.get(player.serverLevel()).releaseAll(faction.id());
         data.remove(faction.id());
+        DiplomacyReportWriter.write(player.getServer());
     }
 
     private static void claim(ServerPlayer player) {
@@ -223,6 +233,95 @@ public final class FactionEventHandler {
         return false;
     }
 
+    private static void declareWar(ServerPlayer actor, String targetName) {
+        FactionsData data = data(actor);
+        Faction faction = data.factionOf(actor.getUUID());
+        if (faction == null) return;
+        if (!FactionPermissions.canManageDiplomacy(faction.roleOf(actor.getUUID()))) return;
+
+        Faction target = data.get(slug(targetName));
+        if (target == null || target.id().equals(faction.id())) return;
+
+        DiplomacyData.get(actor.serverLevel()).setRelation(faction.id(), target.id(), DiplomacyData.Relation.WAR);
+        DiplomacyReportWriter.write(actor.getServer());
+    }
+
+    private static void makePeace(ServerPlayer actor, String targetName) {
+        FactionsData data = data(actor);
+        Faction faction = data.factionOf(actor.getUUID());
+        if (faction == null) return;
+        if (!FactionPermissions.canManageDiplomacy(faction.roleOf(actor.getUUID()))) return;
+
+        Faction target = data.get(slug(targetName));
+        if (target == null) return;
+
+        DiplomacyData diplomacy = DiplomacyData.get(actor.serverLevel());
+        if (diplomacy.relationBetween(faction.id(), target.id()) != DiplomacyData.Relation.WAR) return;
+
+        diplomacy.clearRelation(faction.id(), target.id());
+        DiplomacyReportWriter.write(actor.getServer());
+    }
+
+    private static void proposeAlliance(ServerPlayer actor, String targetName) {
+        FactionsData data = data(actor);
+        Faction faction = data.factionOf(actor.getUUID());
+        if (faction == null) return;
+        if (!FactionPermissions.canManageDiplomacy(faction.roleOf(actor.getUUID()))) return;
+
+        Faction target = data.get(slug(targetName));
+        if (target == null || target.id().equals(faction.id())) return;
+
+        DiplomacyData diplomacy = DiplomacyData.get(actor.serverLevel());
+        if (diplomacy.relationBetween(faction.id(), target.id()) == DiplomacyData.Relation.ALLY) return;
+
+        diplomacy.propose(faction.id(), target.id());
+    }
+
+    private static void acceptAlliance(ServerPlayer actor, String proposerName) {
+        FactionsData data = data(actor);
+        Faction faction = data.factionOf(actor.getUUID());
+        if (faction == null) return;
+        if (!FactionPermissions.canManageDiplomacy(faction.roleOf(actor.getUUID()))) return;
+
+        Faction proposer = data.get(slug(proposerName));
+        if (proposer == null) return;
+
+        DiplomacyData diplomacy = DiplomacyData.get(actor.serverLevel());
+        if (!diplomacy.proposalsFor(faction.id()).contains(proposer.id())) return;
+
+        diplomacy.setRelation(faction.id(), proposer.id(), DiplomacyData.Relation.ALLY);
+        diplomacy.clearProposal(proposer.id(), faction.id());
+        DiplomacyReportWriter.write(actor.getServer());
+    }
+
+    private static void declineAlliance(ServerPlayer actor, String proposerName) {
+        FactionsData data = data(actor);
+        Faction faction = data.factionOf(actor.getUUID());
+        if (faction == null) return;
+        if (!FactionPermissions.canManageDiplomacy(faction.roleOf(actor.getUUID()))) return;
+
+        Faction proposer = data.get(slug(proposerName));
+        if (proposer == null) return;
+
+        DiplomacyData.get(actor.serverLevel()).clearProposal(proposer.id(), faction.id());
+    }
+
+    private static void breakAlliance(ServerPlayer actor, String targetName) {
+        FactionsData data = data(actor);
+        Faction faction = data.factionOf(actor.getUUID());
+        if (faction == null) return;
+        if (!FactionPermissions.canManageDiplomacy(faction.roleOf(actor.getUUID()))) return;
+
+        Faction target = data.get(slug(targetName));
+        if (target == null) return;
+
+        DiplomacyData diplomacy = DiplomacyData.get(actor.serverLevel());
+        if (diplomacy.relationBetween(faction.id(), target.id()) != DiplomacyData.Relation.ALLY) return;
+
+        diplomacy.clearRelation(faction.id(), target.id());
+        DiplomacyReportWriter.write(actor.getServer());
+    }
+
     private static void clearInvites(FactionsData data, UUID player) {
         for (String id : List.copyOf(data.invitesOf(player))) data.removeInvite(player, id);
     }
@@ -266,7 +365,8 @@ public final class FactionEventHandler {
                 }
             }
             return new OpenFactionScreenS2CPacket(false, mustCreate, "", "", List.of(), List.of(),
-                    List.of(), List.of(), List.of(), inviteIds, inviteNames, "", false, List.of());
+                    List.of(), List.of(), List.of(), inviteIds, inviteNames, "", false, List.of(),
+                    List.of(), List.of(), List.of(), false);
         }
 
         List<String> memberNames = new ArrayList<>();
@@ -305,10 +405,28 @@ public final class FactionEventHandler {
             if (key.startsWith(dimensionPrefix)) ownClaims.add(key);
         }
 
-        String viewerRole = faction.roleOf(player.getUUID()).name();
-        return new OpenFactionScreenS2CPacket(true, false, faction.name(), viewerRole,
+        DiplomacyData diplomacy = DiplomacyData.get(player.serverLevel());
+        List<String> otherFactionNames = new ArrayList<>();
+        List<String> otherFactionRelations = new ArrayList<>();
+        for (Faction other : data.all()) {
+            if (other.id().equals(faction.id())) continue;
+            DiplomacyData.Relation relation = diplomacy.relationBetween(faction.id(), other.id());
+            otherFactionNames.add(other.name());
+            otherFactionRelations.add(relation == null ? "NEUTRAL" : relation.name());
+        }
+
+        List<String> incomingProposals = new ArrayList<>();
+        for (String proposerId : diplomacy.proposalsFor(faction.id())) {
+            Faction proposer = data.get(proposerId);
+            if (proposer != null) incomingProposals.add(proposer.name());
+        }
+
+        Faction.Role role = faction.roleOf(player.getUUID());
+        return new OpenFactionScreenS2CPacket(true, false, faction.name(), role.name(),
                 memberNames, memberDisplayNames, memberRoles, invitable, invitableDisplayNames,
                 List.of(), List.of(), currentChunkOwner,
-                FactionPermissions.canManageClaims(faction.roleOf(player.getUUID())), ownClaims);
+                FactionPermissions.canManageClaims(role), ownClaims,
+                otherFactionNames, otherFactionRelations, incomingProposals,
+                FactionPermissions.canManageDiplomacy(role));
     }
 }

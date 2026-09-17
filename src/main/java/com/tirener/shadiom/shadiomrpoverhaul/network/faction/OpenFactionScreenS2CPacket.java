@@ -20,8 +20,9 @@ import java.util.function.Supplier;
  * <p>
  * {@code mustCreateFaction} forces the create-only view (a Faction Center was placed by a
  * faction-less player, but they haven't submitted a name yet). {@code currentChunkOwner},
- * {@code canManageClaims} and {@code ownClaimedChunkKeys} are only meaningful when
- * {@code hasFaction} is true.
+ * {@code canManageClaims}, {@code ownClaimedChunkKeys}, {@code otherFactionNames}/
+ * {@code otherFactionRelations}, {@code incomingProposalNames} and {@code canManageDiplomacy}
+ * are only meaningful when {@code hasFaction} is true.
  */
 public record OpenFactionScreenS2CPacket(
         boolean hasFaction,
@@ -37,7 +38,11 @@ public record OpenFactionScreenS2CPacket(
         List<String> pendingInviteNames,
         String currentChunkOwner,
         boolean canManageClaims,
-        List<String> ownClaimedChunkKeys
+        List<String> ownClaimedChunkKeys,
+        List<String> otherFactionNames,
+        List<String> otherFactionRelations,
+        List<String> incomingProposalNames,
+        boolean canManageDiplomacy
 ) {
 
     public static void encode(OpenFactionScreenS2CPacket pkt, FriendlyByteBuf buf) {
@@ -55,6 +60,10 @@ public record OpenFactionScreenS2CPacket(
         buf.writeUtf(pkt.currentChunkOwner());
         buf.writeBoolean(pkt.canManageClaims());
         writeStringList(buf, pkt.ownClaimedChunkKeys());
+        writeStringList(buf, pkt.otherFactionNames());
+        writeStringList(buf, pkt.otherFactionRelations());
+        writeStringList(buf, pkt.incomingProposalNames());
+        buf.writeBoolean(pkt.canManageDiplomacy());
     }
 
     public static OpenFactionScreenS2CPacket decode(FriendlyByteBuf buf) {
@@ -72,7 +81,11 @@ public record OpenFactionScreenS2CPacket(
                 readStringList(buf),
                 buf.readUtf(),
                 buf.readBoolean(),
-                readStringList(buf)
+                readStringList(buf),
+                readStringList(buf),
+                readStringList(buf),
+                readStringList(buf),
+                buf.readBoolean()
         );
     }
 

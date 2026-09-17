@@ -127,6 +127,39 @@ public class FactionScreen extends Screen {
                 .pos(left, y).size(PANEL_W, ROW_H).build());
         y += ROW_GAP;
 
+        y += 12;
+        shown = 0;
+        for (int i = 0; i < state.otherFactionNames().size() && shown < MAX_ROWS; i++, shown++) {
+            String name = state.otherFactionNames().get(i);
+            String relation = state.otherFactionRelations().get(i);
+
+            List<RowButton> buttons = new ArrayList<>();
+            if (state.canManageDiplomacy()) {
+                if (relation.equals("WAR")) {
+                    buttons.add(new RowButton("Make Peace", b -> send(Action.MAKE_PEACE, name)));
+                } else {
+                    buttons.add(new RowButton("Declare War", b -> send(Action.DECLARE_WAR, name)));
+                }
+                if (relation.equals("ALLY")) {
+                    buttons.add(new RowButton("Break Alliance", b -> send(Action.BREAK_ALLIANCE, name)));
+                } else {
+                    buttons.add(new RowButton("Propose Alliance", b -> send(Action.PROPOSE_ALLIANCE, name)));
+                }
+            }
+            addRow(Component.literal(name + " - " + relation), buttons);
+        }
+
+        if (!state.incomingProposalNames().isEmpty()) {
+            y += 12;
+            shown = 0;
+            for (int i = 0; i < state.incomingProposalNames().size() && shown < MAX_ROWS; i++, shown++) {
+                String proposer = state.incomingProposalNames().get(i);
+                addRow(Component.literal(proposer + " proposes an alliance"), List.of(
+                        new RowButton("Accept", b -> send(Action.ACCEPT_ALLIANCE, proposer)),
+                        new RowButton("Decline", b -> send(Action.DECLINE_ALLIANCE, proposer))));
+            }
+        }
+
         if (isLeader) {
             addRenderableWidget(Button.builder(Component.literal("Disband"), b -> send(Action.DISBAND, ""))
                     .pos(left, y).size(PANEL_W, ROW_H).build());
