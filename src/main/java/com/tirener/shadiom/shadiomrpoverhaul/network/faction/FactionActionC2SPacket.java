@@ -12,7 +12,7 @@ import java.util.function.Supplier;
  *  one dispatch on an enum. */
 public record FactionActionC2SPacket(Action action, String arg) {
 
-    public enum Action { CREATE, INVITE, ACCEPT, DECLINE, KICK, PROMOTE, DEMOTE, LEAVE, DISBAND }
+    public enum Action { CREATE, INVITE, ACCEPT, DECLINE, KICK, PROMOTE, DEMOTE, LEAVE, DISBAND, CLAIM, UNCLAIM }
 
     public static void encode(FactionActionC2SPacket pkt, FriendlyByteBuf buf) {
         buf.writeEnum(pkt.action());

@@ -57,11 +57,13 @@ public class FactionScreen extends Screen {
     }
 
     private void initNoFactionView() {
-        nameField = new EditBox(font, left, y, PANEL_W - 70, ROW_H, Component.literal("Faction name"));
-        addRenderableWidget(nameField);
-        addRenderableWidget(Button.builder(Component.literal("Create"), b -> onCreate())
-                .pos(left + PANEL_W - 65, y).size(65, ROW_H).build());
-        y += ROW_GAP + 12;
+        if (state.mustCreateFaction()) {
+            nameField = new EditBox(font, left, y, PANEL_W - 70, ROW_H, Component.literal("Faction name"));
+            addRenderableWidget(nameField);
+            addRenderableWidget(Button.builder(Component.literal("Create"), b -> onCreate())
+                    .pos(left + PANEL_W - 65, y).size(65, ROW_H).build());
+            return;
+        }
 
         int shown = 0;
         for (int i = 0; i < state.pendingInviteIds().size() && shown < MAX_ROWS; i++, shown++) {
@@ -110,6 +112,21 @@ public class FactionScreen extends Screen {
         }
 
         y += 12;
+        if (state.canManageClaims()) {
+            boolean ownedByMe = state.currentChunkOwner().equals(state.factionName());
+            String label = ownedByMe ? "Unclaim this chunk" : "Claim this chunk";
+            Action action = ownedByMe ? Action.UNCLAIM : Action.CLAIM;
+            addRenderableWidget(Button.builder(Component.literal(label), b -> send(action, ""))
+                    .pos(left, y).size(PANEL_W, ROW_H).build());
+            y += ROW_GAP;
+        }
+
+        String areaLabel = ClaimBorderRenderer.isEnabled() ? "Hide Faction Area" : "Show Faction Area";
+        addRenderableWidget(Button.builder(Component.literal(areaLabel),
+                b -> ClaimBorderRenderer.toggle(state.ownClaimedChunkKeys()))
+                .pos(left, y).size(PANEL_W, ROW_H).build());
+        y += ROW_GAP;
+
         if (isLeader) {
             addRenderableWidget(Button.builder(Component.literal("Disband"), b -> send(Action.DISBAND, ""))
                     .pos(left, y).size(PANEL_W, ROW_H).build());
@@ -156,6 +173,18 @@ public class FactionScreen extends Screen {
     @Override
     public boolean isPauseScreen() {
         return false;
+    }
+
+    @Override
+    public boolean shouldCloseOnEsc() {
+        return !state.mustCreateFaction();
+    }
+
+    @Override
+    public void onClose() {
+        // Deliberately empty while mustCreateFaction is true - same "only way out is completing
+        // it" pattern as NamePickerScreen. Otherwise fall through to the normal close.
+        if (!state.mustCreateFaction()) super.onClose();
     }
 
     private record Label(Component text, int x, int y) {}
