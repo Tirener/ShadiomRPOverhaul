@@ -3,6 +3,7 @@ package com.tirener.shadiom.shadiomrpoverhaul.faction;
 import com.tirener.shadiom.shadiomrpoverhaul.names.ShadiomNameAPI;
 import com.tirener.shadiom.shadiomrpoverhaul.network.ModNetwork;
 import com.tirener.shadiom.shadiomrpoverhaul.network.faction.FactionActionC2SPacket;
+import com.tirener.shadiom.shadiomrpoverhaul.network.faction.FactionClaimsSyncS2CPacket;
 import com.tirener.shadiom.shadiomrpoverhaul.network.faction.OpenFactionScreenS2CPacket;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
@@ -82,9 +83,15 @@ public final class FactionEventHandler {
         String id = slug(name);
         if (data.exists(id)) return;
 
-        data.put(new Faction(id, name, player.getUUID()));
+        Faction faction = new Faction(id, name, player.getUUID());
+        String territoryId = UUID.randomUUID().toString();
+        faction.addTerritory(new Faction.Territory(territoryId, null));
+        faction.setCapitalTerritoryId(territoryId);
+        data.put(faction);
+
         ClaimsData.get(player.serverLevel()).claim(
-                ClaimsData.chunkKey(pending.dimension(), pending.chunkX(), pending.chunkZ()), id, true);
+                ClaimsData.chunkKey(pending.dimension(), pending.chunkX(), pending.chunkZ()),
+                id, territoryId, true);
         PENDING_CAPITALS.remove(player.getUUID());
         DiplomacyReportWriter.write(player.getServer());
     }
@@ -184,10 +191,32 @@ public final class FactionEventHandler {
         if (faction == null) return;
         if (!FactionPermissions.canDisband(faction.roleOf(player.getUUID()))) return;
 
-        ClaimsData.get(player.serverLevel()).releaseAll(faction.id());
-        DiplomacyData.get(player.serverLevel()).releaseAll(faction.id());
-        data.remove(faction.id());
-        DiplomacyReportWriter.write(player.getServer());
+        disbandFaction(player.getServer(), faction);
+    }
+
+    private static void disbandFaction(MinecraftServer server, Faction faction) {
+        ClaimsData.get(server.overworld()).releaseAll(faction.id());
+        DiplomacyData.get(server.overworld()).releaseAll(faction.id());
+        FactionsData.get(server.overworld()).remove(faction.id());
+        DiplomacyReportWriter.write(server);
+    }
+
+    /** Breaking a Faction Center block: the capital territory's disbands the whole faction (same
+     *  outcome as before territories existed); any other territory's just abandons that
+     *  territory - its land stays reserved (still counts for the gap rule, see TerritoryRules)
+     *  but opens up to build like wilderness until some faction plants a new Faction Center
+     *  inside it and repossesses the whole blob. Called from ClaimProtectionHandler. */
+    static void destroyFactionCenter(MinecraftServer server, Faction faction, String territoryId) {
+        if (territoryId.equals(faction.capitalTerritoryId())) {
+            disbandFaction(server, faction);
+            return;
+        }
+
+        ClaimsData claims = ClaimsData.get(server.overworld());
+        for (String chunkKey : claims.chunksOfTerritory(territoryId)) claims.abandon(chunkKey);
+        faction.removeTerritory(territoryId);
+        FactionsData.get(server.overworld()).setDirty();
+        DiplomacyReportWriter.write(server);
     }
 
     private static void claim(ServerPlayer player) {
@@ -200,10 +229,15 @@ public final class FactionEventHandler {
         ChunkPos chunk = player.chunkPosition();
         ResourceKey<Level> dimension = player.level().dimension();
         String key = ClaimsData.chunkKey(dimension, chunk.x, chunk.z);
-        if (claims.get(key) != null) return; // already claimed by someone
-        if (!isAdjacentToOwnClaim(claims, faction.id(), dimension, chunk)) return;
+        if (claims.get(key) != null) return; // already claimed, or abandoned, by someone
 
-        claims.claim(key, faction.id(), false);
+        String territoryId = TerritoryRules.territoryToExtend(claims, faction.id(), dimension, chunk);
+        if (territoryId == null) return; // not touching exactly one of the faction's own territories
+        if (TerritoryRules.anyOtherTerritoryAdjacent(claims, territoryId, dimension, chunk)) return;
+        if (TerritoryRules.territoryChunkCount(claims, territoryId) >= TerritoryRules.MAX_TERRITORY_CHUNKS) return;
+
+        claims.claim(key, faction.id(), territoryId, false);
+        broadcastClaims(player.getServer(), faction);
     }
 
     private static void unclaim(ServerPlayer player) {
@@ -216,22 +250,32 @@ public final class FactionEventHandler {
         ChunkPos chunk = player.chunkPosition();
         String key = ClaimsData.chunkKey(player.level().dimension(), chunk.x, chunk.z);
         ClaimsData.ClaimEntry entry = claims.get(key);
-        if (entry == null || !entry.factionId().equals(faction.id())) return;
-        if (entry.capital()) return; // must break the Faction Center instead
+        if (entry == null || !faction.id().equals(entry.factionId())) return;
+        if (entry.factionCenter()) return; // must break the Faction Center instead
 
         claims.unclaim(key);
+        broadcastClaims(player.getServer(), faction);
     }
 
-    private static boolean isAdjacentToOwnClaim(ClaimsData claims, String factionId,
-                                                 ResourceKey<Level> dimension, ChunkPos chunk) {
-        int[][] deltas = { {1, 0}, {-1, 0}, {0, 1}, {0, -1} };
-        for (int[] d : deltas) {
-            String neighborKey = ClaimsData.chunkKey(dimension, chunk.x + d[0], chunk.z + d[1]);
-            ClaimsData.ClaimEntry neighbor = claims.get(neighborKey);
-            if (neighbor != null && neighbor.factionId().equals(factionId)) return true;
+    /** Pushes every online member's own-claims (filtered to their current dimension, same as
+     *  {@code buildSnapshot} does for the acting player) so {@code ClaimBorderRenderer} stays
+     *  live for whoever's watching it, not just whoever claimed/unclaimed. */
+    private static void broadcastClaims(MinecraftServer server, Faction faction) {
+        ClaimsData claims = ClaimsData.get(server.overworld());
+        for (UUID uuid : faction.allMembers()) {
+            ServerPlayer member = server.getPlayerList().getPlayer(uuid);
+            if (member == null) continue;
+
+            String dimensionPrefix = member.level().dimension().location() + ",";
+            List<String> ownClaims = new ArrayList<>();
+            for (String key : claims.claimsOf(faction.id())) {
+                if (key.startsWith(dimensionPrefix)) ownClaims.add(key);
+            }
+            ModNetwork.CHANNEL.send(PacketDistributor.PLAYER.with(() -> member),
+                    new FactionClaimsSyncS2CPacket(ownClaims));
         }
-        return false;
     }
+
 
     private static void declareWar(ServerPlayer actor, String targetName) {
         FactionsData data = data(actor);

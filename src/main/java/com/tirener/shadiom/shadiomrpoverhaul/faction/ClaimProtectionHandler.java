@@ -2,6 +2,7 @@ package com.tirener.shadiom.shadiomrpoverhaul.faction;
 
 import com.tirener.shadiom.shadiomrpoverhaul.Shadiomrpoverhaul;
 import com.tirener.shadiom.shadiomrpoverhaul.block.ModBlocks;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -11,6 +12,8 @@ import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
+import java.util.Set;
+
 /** Build/break protection inside claimed chunks, and the Faction Center's special
  *  placement/break rules (see the design spec) - everyone else's build/break rule is simply
  *  "member of the owning faction, or the chunk isn't claimed". */
@@ -18,6 +21,10 @@ import net.minecraftforge.fml.common.Mod;
 public final class ClaimProtectionHandler {
 
     private ClaimProtectionHandler() {}
+
+    /** Faction Centers - and so capitals/claims - may only be founded in a vanilla dimension. */
+    private static final Set<ResourceKey<Level>> CIVILIZED_DIMENSIONS =
+            Set.of(Level.OVERWORLD, Level.NETHER, Level.END);
 
     @SubscribeEvent
     public static void onBreak(BlockEvent.BreakEvent event) {
@@ -28,7 +35,7 @@ public final class ClaimProtectionHandler {
         ClaimsData claims = ClaimsData.get(level);
         String key = ClaimsData.chunkKey(level.dimension(), chunk.x, chunk.z);
         ClaimsData.ClaimEntry claimEntry = claims.get(key);
-        if (claimEntry == null) return; // unclaimed, vanilla rules apply
+        if (claimEntry == null || claimEntry.factionId() == null) return; // unclaimed or abandoned - open
 
         FactionsData factions = FactionsData.get(level);
         Faction faction = factions.factionOf(sp.getUUID());
@@ -40,7 +47,7 @@ public final class ClaimProtectionHandler {
                 event.setCanceled(true);
                 return;
             }
-            claims.unclaim(key);
+            FactionEventHandler.destroyFactionCenter(sp.getServer(), faction, claimEntry.territoryId());
             return;
         }
 
@@ -60,11 +67,18 @@ public final class ClaimProtectionHandler {
         Faction faction = factions.factionOf(sp.getUUID());
 
         if (event.getPlacedBlock().is(ModBlocks.FACTION_CENTER.get())) {
+            if (!CIVILIZED_DIMENSIONS.contains(dimension)) {
+                event.setCanceled(true);
+                sp.sendSystemMessage(Component.literal("This is no place for civilization."));
+                return;
+            }
+
             ClaimsData.ClaimEntry existing = claims.get(key);
 
             if (faction == null) {
-                if (existing != null) { event.setCanceled(true); return; }
+                if (existing != null) { event.setCanceled(true); return; } // claimed or abandoned land
                 if (FactionEventHandler.hasPendingCapital(sp.getUUID())) { event.setCanceled(true); return; }
+                if (TerritoryRules.anyTerritoryAdjacent(claims, dimension, chunk)) { event.setCanceled(true); return; }
                 FactionEventHandler.recordPendingCapital(sp, dimension, chunk);
                 return;
             }
@@ -73,16 +87,30 @@ public final class ClaimProtectionHandler {
                 event.setCanceled(true);
                 return;
             }
-            if (existing != null && !existing.factionId().equals(faction.id())) {
-                event.setCanceled(true);
+
+            if (existing == null) {
+                if (TerritoryRules.anyTerritoryAdjacent(claims, dimension, chunk)) { event.setCanceled(true); return; }
+                String territoryId = java.util.UUID.randomUUID().toString();
+                faction.addTerritory(new Faction.Territory(territoryId, null));
+                claims.claim(key, faction.id(), territoryId, true);
                 return;
             }
-            claims.claim(key, faction.id(), true);
+
+            if (existing.factionId() == null) {
+                // Abandoned land - repossess the whole former territory, not just this chunk.
+                Set<String> blob = claims.chunksOfTerritory(existing.territoryId());
+                String territoryId = java.util.UUID.randomUUID().toString();
+                faction.addTerritory(new Faction.Territory(territoryId, null));
+                claims.repossess(blob, faction.id(), territoryId, key);
+                return;
+            }
+
+            event.setCanceled(true); // already claimed by someone, including your own faction
             return;
         }
 
         ClaimsData.ClaimEntry claimEntry = claims.get(key);
-        if (claimEntry == null) return;
+        if (claimEntry == null || claimEntry.factionId() == null) return;
         boolean isMember = faction != null && faction.id().equals(claimEntry.factionId());
         if (!isMember) event.setCanceled(true);
     }
