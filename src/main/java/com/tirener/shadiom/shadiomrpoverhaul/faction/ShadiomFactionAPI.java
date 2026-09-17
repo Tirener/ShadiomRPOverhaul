@@ -79,7 +79,7 @@ public final class ShadiomFactionAPI {
     public static boolean isCapital(MinecraftServer server, ResourceKey<Level> dimension, ChunkPos chunk) {
         ClaimsData.ClaimEntry entry = ClaimsData.get(server.overworld())
                 .get(ClaimsData.chunkKey(dimension, chunk.x, chunk.z));
-        return entry != null && entry.capital();
+        return entry != null && entry.factionCenter();
     }
 
     // -- Diplomacy --
