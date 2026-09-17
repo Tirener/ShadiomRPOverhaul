@@ -79,6 +79,32 @@ public final class ShadiomTitleAPI {
         return TitlePlayerData.get(player);
     }
 
+    /** {@code name} recolored per the player's active title (gradient or solid), or plain if
+     *  they have none / it doesn't override color. Mirrors the coloring {@link TitleEventHandler}
+     *  applies to the display name, for callers (e.g. chat) that need the name on its own. */
+    public static Component styledName(ServerPlayer player, String name) {
+        Title title = activeTitle(player);
+        if (title == null) return Component.literal(name);
+        if (title.nameGradientTo() != null) {
+            return GradientText.build(name, title.nameColor(), title.nameGradientTo());
+        }
+        if (title.nameColor() != null) {
+            return Component.literal(name).withStyle(style -> style.withColor(title.nameColor()));
+        }
+        return Component.literal(name);
+    }
+
+    /** The active title's own display text, or {@code null} if the player has none. */
+    public static Component titleDisplay(ServerPlayer player) {
+        Title title = activeTitle(player);
+        return title == null ? null : title.display();
+    }
+
+    private static Title activeTitle(ServerPlayer player) {
+        String id = activeTitleId(player);
+        return id == null ? null : TitleRegistry.get(id);
+    }
+
     private static void broadcast(ServerPlayer player, String titleId) {
         ModNetwork.CHANNEL.send(
                 PacketDistributor.DIMENSION.with(player.level()::dimension),

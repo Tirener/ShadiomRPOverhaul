@@ -5,6 +5,6 @@ Specification-Version: 1
 Implementation-Title: ShadiomRPOverhaul
 Implementation-Version: 1.0-SNAPSHOT
 Implementation-Vendor: Tirener
-Implementation-Timestamp: 2026-09-16T22:36:55+0100
+Implementation-Timestamp: 2026-09-17T05:53:15+0100
 MixinConfigs: shadiomrpoverhaul.mixins.json
 

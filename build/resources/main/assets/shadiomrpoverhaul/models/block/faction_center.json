@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/cube_all",
+  "textures": {
+    "all": "shadiomrpoverhaul:block/faction_center"
+  }
+}
