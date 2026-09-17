@@ -1,6 +1,8 @@
 package com.tirener.shadiom.shadiomrpoverhaul.network;
 
 import com.tirener.shadiom.shadiomrpoverhaul.Shadiomrpoverhaul;
+import com.tirener.shadiom.shadiomrpoverhaul.network.faction.FactionActionC2SPacket;
+import com.tirener.shadiom.shadiomrpoverhaul.network.faction.OpenFactionScreenS2CPacket;
 import com.tirener.shadiom.shadiomrpoverhaul.network.names.NameSyncPacket;
 import com.tirener.shadiom.shadiomrpoverhaul.network.names.OpenNamePickerS2CPacket;
 import com.tirener.shadiom.shadiomrpoverhaul.network.names.SubmitNamePickC2SPacket;
@@ -28,6 +30,8 @@ public class ModNetwork {
     private static final int ID_OPEN_NAME_PICKER = 1;
     private static final int ID_SUBMIT_NAME_PICK = 2;
     private static final int ID_NAME_SYNC = 3;
+    private static final int ID_OPEN_FACTION_SCREEN = 4;
+    private static final int ID_FACTION_ACTION = 5;
 
     public static void register() {
         CHANNEL.registerMessage(
@@ -61,6 +65,22 @@ public class ModNetwork {
                 NameSyncPacket::decode,
                 NameSyncPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_CLIENT)
+        );
+        CHANNEL.registerMessage(
+                ID_OPEN_FACTION_SCREEN,
+                OpenFactionScreenS2CPacket.class,
+                OpenFactionScreenS2CPacket::encode,
+                OpenFactionScreenS2CPacket::decode,
+                OpenFactionScreenS2CPacket::handle,
+                Optional.of(NetworkDirection.PLAY_TO_CLIENT)
+        );
+        CHANNEL.registerMessage(
+                ID_FACTION_ACTION,
+                FactionActionC2SPacket.class,
+                FactionActionC2SPacket::encode,
+                FactionActionC2SPacket::decode,
+                FactionActionC2SPacket::handle,
+                Optional.of(NetworkDirection.PLAY_TO_SERVER)
         );
     }
 }
